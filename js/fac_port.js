@@ -58,7 +58,8 @@
     center() { return [this.A + 10, 590]; }
     bounds() { return { x0: this.A - 120, x1: this.A + 120, z0: 560, z1: 602 }; }
     radius() { return 90; }
-    get gateIn() { return { A: this.A, z: 562 }; }
+    // queue head waits here: its nose must stay clear of the exit lane crossing at z 569
+    get gateIn() { return { A: this.A, z: 555 }; }
     get gateIdx() { return 0; }
     get gateOut() { return { A: this.A, z: 569 }; }
     inPath() { const A = this.A; return [[A - 3, 568], [A - 3, 571], [A - 38, 571], [A - 38, 589], [A + 16, 589]]; }

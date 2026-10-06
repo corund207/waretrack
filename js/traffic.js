@@ -357,6 +357,8 @@
           for (let i = 0; i < 8 && o; i++) {
             if (o === v) { cyc = true; break; }
             if (!o.driving) { parked = true; break; }
+            // a truck waiting for a bay only gets driven around by crossing traffic, never by the queue behind it
+            if (o.holding && Math.cos(o.actor.h - a.h) < 0.5) { parked = true; break; }
             o = o.blocker;
           }
           if (cyc || (parked && v.waitT > 30)) {
@@ -545,9 +547,9 @@
         yield* TR.drive(t, pre, opts);
         pre = [[a.x, a.z]];
         t.status = 'Queued at gate';
-        t.driving = true;
+        t.driving = true; t.holding = true; t.blocker = null; t.why = 'Waiting for a bay';
         yield* WT.waitFor(() => (leg.dock = leg.fac.reserve(leg.op)));
-        t.driving = false;
+        t.driving = false; t.holding = false; t.why = null;
         leg.fac.lazyN = Math.max(0, (leg.fac.lazyN || 0) - 1);
       } else if (!leg.dock) { leg.dock = leg.fac.reserve(leg.op); if (!leg.dock) { t.curLeg = null; continue; } }
       const ip = leg.fac.inPath(leg.dock).slice(skip), gk = skip ? undefined : leg.fac.gateIdx;

@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://github.com/corund207/waretrack/actions/workflows/ci.yml"><img src="https://github.com/corund207/waretrack/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/version-v5.2.0-2f56e0" alt="version" />
+  <img src="https://img.shields.io/badge/version-v5.2.1-2f56e0" alt="version" />
   <img src="https://img.shields.io/badge/three.js-r147-black" alt="three.js" />
   <img src="https://img.shields.io/badge/build-zero%20dependencies-3ddc84" alt="no dependencies" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" /></a>
@@ -134,7 +134,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
   gate-in check.
 - The vehicle card's *Traffic* row says why a vehicle is waiting: red light, junction busy, exit blocked, or queued
   behind another vehicle.
-- The version is shown next to the logo (currently **v5.2.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
+- The version is shown next to the logo (currently **v5.2.1**). Hard-refresh (Ctrl+F5) if it doesn't match.
 - Vehicle variety: cab-over and long-hood rigs; box, curtainsider, reefer, tanker, coil, log, container and dump
   trailers; concrete mixers; sedans, SUVs, vans, pickups and shuttle buses. Through trains carry tank, hopper and box
   wagons, and tankers and bulk carriers pass offshore.
