@@ -1,6 +1,6 @@
 {
   "name": "waretrack",
-  "version": "5.3.0",
+  "version": "5.4.0",
   "private": true,
   "description": "A self-building isometric logistics park: road, rail, sea and air freight feeding a live multi-stage supply chain.",
   "type": "module",
