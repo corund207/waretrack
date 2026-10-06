@@ -163,16 +163,28 @@
     wallPiece(g, t, h, d, x0 + t / 2, 0, cz, 'z', colors);
     wallPiece(g, t, h, d, x1 - t / 2, 0, cz, 'z', colors);
     const DW = o.doorW || 6.4, DH = o.doorH || 5.4;
+    // openings on the +Z face: truck dock doors, plus smaller personnel / forklift doors
+    const FW = 3.6, FH = 3.8;
     const sorted = [...doors].sort((a, b) => a - b);
+    const openings = [...doors.map((x) => ({ x, w: DW, h: DH })), ...(o.forkDoors || []).map((x) => ({ x, w: FW, h: FH }))].sort((a, b) => a.x - b.x);
     let cur = x0;
-    for (const dx of sorted) {
-      const a = dx - DW / 2;
+    for (const op of openings) {
+      const a = op.x - op.w / 2;
       if (a > cur) wallPiece(g, a - cur, h, t, (cur + a) / 2, 0, z1 - t / 2, 'x', colors);
-      wallPiece(g, DW, h - DH, t, dx, DH, z1 - t / 2, 'x', colors);
-      cur = dx + DW / 2;
+      wallPiece(g, op.w, h - op.h, t, op.x, op.h, z1 - t / 2, 'x', colors);
+      cur = op.x + op.w / 2;
     }
     if (x1 > cur) wallPiece(g, x1 - cur, h, t, (cur + x1) / 2, 0, z1 - t / 2, 'x', colors);
     const b = new M.MB();
+    for (const fx of o.forkDoors || []) {
+      // forklift door: steel frame, yellow-and-black guard posts, a warning light and a "forklifts only" sign
+      b.box(0.35, FH + 0.35, 0.35, 0xf0b429, fx - FW / 2 - 0.15, 0, z1 + 0.05);
+      b.box(0.35, FH + 0.35, 0.35, 0xf0b429, fx + FW / 2 + 0.15, 0, z1 + 0.05);
+      b.box(FW + 0.65, 0.35, 0.35, 0xf0b429, fx, FH, z1 + 0.05);
+      for (const s of [-1, 1]) for (let k = 0; k < 3; k++) b.box(0.42, 0.33, 0.42, k % 2 ? 0x262a3d : 0xf0b429, fx + s * (FW / 2 + 0.7), k * 0.33, z1 + 0.6);
+      b.box(0.5, 0.3, 0.3, 0xff9a3c, fx, FH + 0.45, z1 + 0.25);
+      b.box(1.6, 0.9, 0.08, 0xf0b429, fx + FW / 2 + 1.5, FH - 1.2, z1 + 0.06);
+    }
     for (const dx of sorted) {
       b.box(0.5, DH + 0.5, 0.5, 0x5d7ff0, dx - DW / 2 - 0.2, 0, z1 + 0.05);
       b.box(0.5, DH + 0.5, 0.5, 0x5d7ff0, dx + DW / 2 + 0.2, 0, z1 + 0.05);

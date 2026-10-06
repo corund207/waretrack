@@ -316,6 +316,7 @@
       const k = path.maxK(v.s, v.s + 8);
       if (k > 1e-3) target = Math.min(target, Math.max(2.2, Math.sqrt(latA / k)));
       target = Math.min(target, Math.sqrt(2 * DEC * rem) + 0.5);
+      if (o.tail && rem < o.tail.d) { target = Math.min(target, o.tail.v); if (o.tail.gap) v.yieldGap = o.tail.gap; }
       for (const st of stops) {
         if (st.done) continue;
         if (st.inside) {
@@ -564,11 +565,9 @@
         yield* TR.drive(t, [[a.x, a.z], ...ip.slice(gk + 1)], opts);
       } else {
         if (willReverse) {
-          // drive to the plant gate normally, then claim manoeuvring room on the apron lane
-          const k = ip.length > 2 ? 1 : 0;
-          yield* TR.drive(t, [...pre, ...ip.slice(0, k + 1)], opts);
-          t.yieldGap = 16;
-          yield* TR.drive(t, [[a.x, a.z], ...ip.slice(k + 1)], { speed: 8 });
+          // one continuous drive (no heading snap at a waypoint); over the last stretch slow down and
+          // claim manoeuvring room behind for the reverse onto the dock
+          yield* TR.drive(t, [...pre, ...ip], Object.assign({}, opts, { tail: { d: 28, v: 8, gap: 16 } }));
         } else yield* TR.drive(t, [...pre, ...ip], opts);
       }
       const dp = leg.fac.dockPath && leg.fac.dockPath(leg.dock);

@@ -1,10 +1,15 @@
-/* WareTrack – warehouse facility: dock bays, apron + yard forklifts, yard slots.
-   All internal logic runs in the warehouse "dock frame" (X along the dock wall, Z away from it). */
+/* WareTrack – warehouse facility: back-in dock doors, dock and yard forklifts, forklift doors, yard slots.
+   All internal logic runs in the warehouse "dock frame" (X along the dock wall, Z away from it; the wall is at Z = −6). */
 (function () {
   const T = THREE, M = WT.M, W = WT.W;
-  const TRUCK_Z = 2, STAND_N = -2.25, STAND_DOOR = -5.35, DOOR_PAL_Z = -8.2, TURN_Z = -2.7;
-  const STAND_S = 6.2, YARD_PAL_Z = 3.35, FORK_REACH = 2.85;
-  const BAYS = [26, 0, -26];
+  // trucks: drive along the yard road, pull past the bay, reverse square onto the dock door, pull straight out
+  const ROAD_Z = 12, PULL = 12, TRUCK_Z = 2.0; // docked rig origin: trailer doors against the door seals
+  const WALL_Z = -6, FORK_REACH = 2.85;
+  // dock forklifts work from inside the building: forks into the trailer through the open roller door
+  const DOCK_HOME = -12.5, DOCK_STAND = -6.7, TRAILER_PAL_Z = DOCK_STAND + FORK_REACH;
+  // yard forklifts carry pallets between the outdoor yard and the building through their own doors
+  const FDOOR_IN = -11.5, LANE_Z = 12.5;
+  const BAYS = [26, 0, -26], FDOORS = [13, -13];
 
   /* ---------- forklift ---------- */
   class Forklift extends WT.Entity {
@@ -20,7 +25,7 @@
       this.task = 'Idle';
       this.carry = null;
       this.home = home;
-      this.mesh = M.forklift(role === 'apron' ? 0xf5a524 : 0xf2c12e);
+      this.mesh = M.forklift(role === 'dock' ? 0xf5a524 : 0xf2c12e);
       this.lift = this.mesh.userData.lift;
       this.actor = new WT.Actor('forklift', this.mesh, 'fork');
       this.actor.scope = wh.id;
@@ -34,7 +39,7 @@
     radius() { return 2.5; }
     card() {
       return {
-        kicker: 'Forklift · ' + (this.role === 'apron' ? 'Dock apron' : 'Yard'), title: this.id, sub: 'Operator ' + this.operator,
+        kicker: 'Forklift · ' + (this.role === 'dock' ? 'Dock door ' + this.bay.n : 'Yard · forklift door ' + this.door.n), title: this.id, sub: 'Operator ' + this.operator,
         icon: '🏗️', iconBg: '#ffc94d', status: this.task === 'Idle' ? 'Idle' : 'Moving', statusTone: this.task === 'Idle' ? 'grey' : 'blue', where: this.task,
         rows: [['Operator', this.operator], ['Battery', Math.round(this.battery) + '%'], ['Task', this.task],
           ['Carrying', this.carry ? this.carry.id : '—'], ['Capacity', '2,500 kg'], ['Distance today', this.distance.toFixed(1) + ' km']],
@@ -56,30 +61,36 @@
       this.fr.rotation.y = -Math.PI / 2;
       this.fr.position.x = 64;
       this.group.add(this.fr);
-      this.bays = BAYS.map((x, i) => ({ n: i + 1, x, door: { x, z: -6 }, truck: null, jobs: [], docked: false }));
+      this.bays = BAYS.map((x, i) => ({ n: i + 1, x, truck: null, jobs: [], docked: false, busy: null }));
       this.docks = this.bays;
+      this.fdoors = FDOORS.map((x, i) => ({ n: i + 1, x }));
       this.slots = [];
       this.forklifts = [];
       this.income = 9000;
       this.site = { x: 86, z: 0, w: 34, d: 96, h: 11 };
       this.belts = [];
+      this.moved = 0;
     }
     P(X, Z) { return this.toWorld(64 - Z, X); }
     get gateIn() { return { A: this.plot.A, z: this.P(46, 64)[1] }; }
     get gateOut() { return { A: this.plot.A, z: this.P(-46, 64)[1] }; }
-    inPath(bay) { return [[46, 64], [46, 12], [bay.x + 10, 12], [bay.x + 10, TRUCK_Z], [bay.x, TRUCK_Z]].map(([x, z]) => this.P(x, z)); }
-    outPath(bay) { return [[bay.x, TRUCK_Z], [bay.x - 3, TRUCK_Z], [bay.x - 9, 12], [-46, 12], [-46, 64]].map(([x, z]) => this.P(x, z)); }
+    inPath(bay) { return [[46, 64], [46, ROAD_Z], [bay.x - PULL, ROAD_Z]].map(([x, z]) => this.P(x, z)); }
+    dockPath(bay) { return [[bay.x - PULL, ROAD_Z], [bay.x, ROAD_Z], [bay.x, TRUCK_Z]].map(([x, z]) => this.P(x, z)); }
+    outPath(bay) { return [[bay.x, TRUCK_Z], [bay.x, ROAD_Z], [-46, ROAD_Z], [-46, 64]].map(([x, z]) => this.P(x, z)); }
 
     build() {
       this.pad();
       const fr = this.fr;
-      W.flat(fr, 96, 11, W.COL.apron, 0, -0.5, 0.026);
-      W.flat(fr, 98, 6, W.COL.road, 0, 12, 0.028);
+      W.flat(fr, 96, 15, W.COL.apron, 0, 1.5, 0.026);
+      W.flat(fr, 98, 6, W.COL.road, 0, ROAD_Z, 0.028);
       W.flat(fr, 6, 52, W.COL.road, 46, 38, 0.028);
       W.flat(fr, 6, 52, W.COL.road, -46, 38, 0.028);
-      const yard = [], yel = [];
+      const yard = [], yel = [], guide = [];
       W.dashLine(yel, -48, 9.2, 48, 9.2, 2, 1.4, 0.2);
       W.dashLine(yel, -48, 14.8, 48, 14.8, 2, 1.4, 0.2);
+      // bay guide lines for reversing trucks, and walkway lanes from each forklift door to the yard
+      for (const x of BAYS) for (const s of [-1, 1]) W.dashLine(guide, x + s * 2.1, -5.6, x + s * 2.1, 8.6, 14.2, 0, 0.22);
+      for (const x of FDOORS) for (const s of [-1, 1]) W.dashLine(yel, x + s * 1.9, -5.6, x + s * 1.9, 8.8, 1.2, 0.8, 0.22);
       for (const sz of [21, 30]) for (let i = 0; i < 9; i++) {
         const sx = -36 + i * 9;
         this.slots.push({ id: this.slots.length + 1, x: sx, z: sz, pallet: null, reserved: null, aisle: sx + 4.5 });
@@ -87,6 +98,7 @@
       }
       W.dashes(fr, yard, W.COL.yellow, 0.056);
       W.dashes(fr, yel, W.COL.yellow, 0.057);
+      W.dashes(fr, guide, 0xffffff, 0.057);
       const s = new T.Group();
       s.rotation.y = -Math.PI / 2;
       s.position.x = 64;
@@ -97,14 +109,17 @@
         fulfil: { colors: ['#1aa6b7', '#178f9e'], roof: 0x2fbccc, sawtooth: true, h: 12 },
         bulk: { colors: ['#4a5578', '#414b6b'], roof: 0x5b6a94, roofLogo: true, h: 13 },
       }[this.style];
-      M.shed(s, Object.assign({ x0: -47, x1: 47, z0: -38, z1: -6, h: 11, doors: BAYS, sign: this.id }, ST));
-      // roller doors (open while a truck is docked)
-      this.rollers = BAYS.map((x) => {
-        const d = new T.Mesh(new T.BoxGeometry(6.2, 5.3, 0.16), M.mat(this.style === 'cold' ? 0x9fb4ff : 0xc7cde3));
-        d.position.set(x, 2.65, -6.25);
+      M.shed(s, Object.assign({ x0: -47, x1: 47, z0: -38, z1: WALL_Z, h: 11, doors: BAYS, forkDoors: FDOORS, sign: this.id }, ST));
+      // roller doors: dock doors open while a truck is on the bay, forklift doors open for a forklift
+      const roller = (x, w, h) => {
+        const d = new T.Mesh(new T.BoxGeometry(w, h, 0.16), M.mat(this.style === 'cold' ? 0x9fb4ff : 0xc7cde3));
+        d.position.set(x, h / 2, WALL_Z - 0.25);
+        d.userData.h = h;
         s.add(d);
         return d;
-      });
+      };
+      this.rollers = BAYS.map((x) => roller(x, 6.2, 5.3));
+      this.fdoors.forEach((d) => (d.roller = roller(d.x, 3.4, 3.7)));
       if (this.style === 'cold') {
         this.coldFans = [];
         for (let x = -41; x < 43; x += 10) for (const z of [-14.5, -29.5]) {
@@ -137,20 +152,20 @@
           s.pallet = p;
         }
       });
-      new Forklift(this, 1, 'apron', [43, -3.4, Math.PI]);
-      new Forklift(this, 2, 'apron', [-43, -3.4, 0]);
-      new Forklift(this, 3, 'yard', [28, 40, -Math.PI / 2]);
-      new Forklift(this, 4, 'yard', [-28, 40, -Math.PI / 2]);
-      this.forklifts.forEach((f) => WT.spawn(this.worker(f)));
+      // one dock forklift per door, parked inside; two yard forklifts, one per forklift door
+      this.bays.forEach((b, i) => { const f = new Forklift(this, i + 1, 'dock', [b.x + 3.5, DOCK_HOME, Math.PI / 2]); f.bay = b; });
+      this.fdoors.forEach((d, i) => { const f = new Forklift(this, 4 + i, 'yard', [d.x * 2.2, 40, -Math.PI / 2]); f.door = d; });
+      this.forklifts.forEach((f) => WT.spawn(f.role === 'dock' ? this.dockWorker(f) : this.yardWorker(f)));
       this.addGates();
       WT.on('frame', () => {
         const dt = WT.sim.dt;
-        this.bays.forEach((b, i) => {
-          const r = this.rollers[i], open = b.docked ? 1 : 0;
+        const slide = (r, open) => {
           r.userData.o = WT.clamp((r.userData.o || 0) + (open ? dt : -dt) * 0.8, 0, 1);
           r.scale.y = Math.max(0.06, 1 - r.userData.o * 0.94);
-          r.position.y = 5.3 - (5.3 * r.scale.y) / 2;
-        });
+          r.position.y = r.userData.h - (r.userData.h * r.scale.y) / 2;
+        };
+        this.bays.forEach((b, i) => slide(this.rollers[i], b.docked));
+        this.fdoors.forEach((d) => slide(d.roller, this.forklifts.some((f) => f.role === 'yard' && Math.abs(f.actor.x - d.x) < 3 && Math.abs(f.actor.z - WALL_Z) < 7.5)));
         if (this.coldFans) for (const f of this.coldFans) f.rotation.y += dt * 8;
       });
     }
@@ -158,8 +173,9 @@
       const docked = this.bays.filter((b) => b.docked).length;
       return this.cardBase({
         kicker: 'Facility · ' + this.name, icon: this.style === 'cold' ? '❄️' : '🏬', where: Math.round((this.stock / this.capacity) * 100) + '% full',
-        rows: [['Stock on hand', WT.fmtNum(this.stock) + ' pallets'], ['Capacity', WT.fmtNum(this.capacity) + ' pallets'], ['Dock bays', docked + ' / 3 docked'],
-          ['Forklifts', String(this.forklifts.length)], ['Yard slots', this.slots.filter((s) => s.pallet).length + ' / ' + this.slots.length], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
+        rows: [['Stock on hand', WT.fmtNum(this.stock) + ' pallets'], ['Capacity', WT.fmtNum(this.capacity) + ' pallets'], ['Dock doors', docked + ' / 3 trucks docked'],
+          ['Forklifts', `${this.bays.length} dock · ${this.fdoors.length} yard`], ['Yard slots', this.slots.filter((s) => s.pallet).length + ' / ' + this.slots.length],
+          ['Yard ↔ building', WT.fmtNum(this.moved) + ' pallets'], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
       });
     }
 
@@ -177,7 +193,7 @@
         f.mesh.getWorldPosition(wp);
         return WT.TR.nearby(wp.x, wp.z, 14, near).some((v) => !v.proxyOf && v.actor.speed > 0.5 && Math.hypot(v.actor.x - wp.x, v.actor.z - wp.z) < 11);
       };
-      yield* WT.drive(a, [[a.x, a.z], ...pts], { speed, radius: 2.2, turnRate: 6, avoid: true, avoidGap: 6, avoidLat: 2.6, avoidMin: 3.4, accel: 6, latAccel: 5, hold });
+      yield* WT.drive(a, [[a.x, a.z], ...pts], { speed, radius: 2.2, turnRate: 6, avoid: true, avoidGap: 6, avoidLat: 2.6, avoidMin: 3.4, accel: 6, latAccel: 5, hold: f.role === 'yard' ? hold : null });
       f.distance += Math.hypot(a.x - x0, a.z - z0) / 1000;
       f.battery = Math.max(20, f.battery - 0.05);
     }
@@ -203,188 +219,148 @@
       const a = f.actor;
       if (a.z < 13.5) return [];
       const ax = Math.round((a.x + 31.5) / 9) * 9 - 31.5;
-      return [[ax, a.z], [ax, 12]];
+      return [[ax, a.z], [ax, LANE_Z]];
     }
     *toSlot(f, slot) {
       const pre = slot.z - FORK_REACH - 3;
-      yield* this.go(f, [...this.laneExit(f), [slot.aisle, 12.5], [slot.aisle, pre], [slot.x, pre], [slot.x, slot.z - FORK_REACH]], 7);
+      yield* this.go(f, [...this.laneExit(f), [slot.aisle, LANE_Z], [slot.aisle, pre], [slot.x, pre], [slot.x, slot.z - FORK_REACH]], 7);
     }
     *leaveSlot(f, slot) { yield* this.back(f, [[slot.x, slot.z - FORK_REACH - 3]]); }
     slotsWith(fn) { const c = this.slots.filter(fn); return c.length ? WT.pick(c) : null; }
 
-    /* ----- jobs ----- */
-    *apronJob(f, bay) {
+    /* ----- dock door: one pallet in or out of the trailer ----- */
+    *dockJob(f, bay) {
       const t = bay.truck, x = bay.x, A = f.actor;
-      f.task = (t.dir === 'out' ? 'Loading ' : 'Unloading ') + t.id;
-      yield* this.go(f, [[A.x, -3.4], [x, -3.4]].filter((p, i) => i || Math.abs(A.z + 3.4) > 0.5), 6);
+      f.task = (t.dir === 'out' ? 'Loading ' : 'Unloading ') + t.id + ' · door ' + bay.n;
+      yield* this.go(f, [[x, DOCK_HOME]], 4);
+      yield* WT.turnTo(A, Math.PI / 2, 3.5);
       if (t.dir === 'out') {
-        const p = new WT.Pallet({ status: 'Picked', loc: `${this.id} · Dock door ${bay.n}` });
-        p.placeIn(this.fr, x, DOOR_PAL_Z);
+        // pallet picked from the racking inside, driven over the dock leveler into the trailer
+        const p = new WT.Pallet({ status: 'Picked', loc: `${this.id} · Door ${bay.n}` });
+        p.placeIn(this.fr, x, DOCK_HOME + FORK_REACH, 0, 0);
         this.stock--;
-        p.mesh.scale.setScalar(0.01);
-        yield* WT.tween(0.3, (k) => p.mesh.scale.setScalar(Math.max(0.01, k)));
-        yield* WT.turnTo(A, -Math.PI / 2, 3.5);
-        yield* this.go(f, [[x, STAND_DOOR]], 2.5);
         this.pickUp(f, p);
-        p.status = 'Loading'; p.loc = `${this.id} · Bay ${bay.n} · ${t.id}`;
-        yield* this.forks(f, 0.5);
-        yield* this.back(f, [[x, TURN_Z]]);
-        yield* WT.turnTo(A, Math.PI / 2, 3);
-        yield* this.go(f, [[x, STAND_N]], 2);
-        yield* this.forks(f, 1.05, 0.4);
+        yield* this.forks(f, 1.05, 0.5);
+        p.status = 'Loading'; p.loc = `${this.id} · Door ${bay.n} · ${t.id}`;
+        yield* this.go(f, [[x, DOCK_STAND]], 3);
         this.putDown(f).mesh.position.y = 1.15;
-        yield* this.slide(p, 0, 1.6, 0.6, true);
+        yield* this.slide(p, 0, 2.2, 0.6, true);
         p.dispose();
         t.loaded++;
+        yield* this.back(f, [[x, DOCK_HOME]], 3);
         yield* this.forks(f, 0.1, 0.4);
-        yield* this.back(f, [[x, TURN_Z]]);
       } else {
-        yield* WT.turnTo(A, Math.PI / 2, 3.5);
-        yield* this.go(f, [[x, STAND_N]], 2);
-        const p = new WT.Pallet({ status: 'Unloading', loc: `${this.id} · Bay ${bay.n} · ${t.id}` });
-        p.placeIn(this.fr, x, STAND_N + FORK_REACH + 1.0, 1.15, 0);
-        yield* this.slide(p, 0, -1.0, 0.5);
-        yield* this.forks(f, 1.05, 0.2);
+        yield* this.forks(f, 1.05, 0.4);
+        yield* this.go(f, [[x, DOCK_STAND]], 3);
+        const p = new WT.Pallet({ status: 'Unloading', loc: `${this.id} · Door ${bay.n} · ${t.id}` });
+        p.placeIn(this.fr, x, TRAILER_PAL_Z + 1.2, 1.15, 0);
+        yield* this.slide(p, 0, -1.2, 0.5);
         this.pickUp(f, p);
-        yield* this.back(f, [[x, TURN_Z]]);
-        yield* this.forks(f, 0.5, 0.4);
-        yield* WT.turnTo(A, -Math.PI / 2, 3);
-        yield* this.go(f, [[x, STAND_DOOR]], 2.5);
-        p.status = 'Stored'; p.loc = `${this.id} · Inbound buffer`;
-        yield* this.forks(f, 0.1, 0.4);
-        this.putDown(f);
-        yield* this.back(f, [[x, TURN_Z]]);
-        yield* this.slide(p, 0, -4, 0.8, true);
-        p.dispose();
         t.loaded++;
-        this.stock++;
+        yield* this.back(f, [[x, DOCK_HOME]], 3);
+        yield* this.forks(f, 0.1, 0.4);
+        p.status = 'Stored'; p.loc = `${this.id} · Racking`;
+        this.putDown(f);
+        yield* this.slide(p, 0, -3, 0.6, true);
+        p.dispose();
+        this.stock = Math.min(this.capacity, this.stock + 1);
       }
     }
-    *yardJob(f, bay, job) {
-      const t = bay.truck, tx = bay.x - 2, A = f.actor;
-      f.task = (t.dir === 'out' ? 'Loading ' : 'Unloading ') + t.id;
-      if (t.dir === 'out') {
-        let p;
-        if (job.slot) {
-          p = job.slot.pallet;
-          yield* this.toSlot(f, job.slot);
-          this.pickUp(f, p);
-          job.slot.pallet = null; job.slot.reserved = null;
-          yield* this.forks(f, 0.5);
-          yield* this.leaveSlot(f, job.slot);
-          yield* this.go(f, [...this.laneExit(f), [tx, 11], [tx, STAND_S]], 7);
-        } else {
-          p = new WT.Pallet({ status: 'Picked', loc: `${this.id} · Cross-dock` });
-          p.placeIn(this.fr, tx, 13.5 + FORK_REACH, 0, 0);
-          yield* this.go(f, [...this.laneExit(f), [tx, 13.5]], 7);
-          yield* WT.turnTo(A, Math.PI / 2, 3);
-          this.pickUp(f, p);
-          yield* this.forks(f, 0.5);
-          yield* WT.turnTo(A, -Math.PI / 2, 3);
-          yield* this.go(f, [[tx, STAND_S]], 3);
-        }
-        p.status = 'Loading'; p.loc = `${this.id} · Bay ${bay.n} · ${t.id}`;
-        yield* this.forks(f, 1.05, 0.4);
-        this.putDown(f).mesh.position.y = 1.15;
-        yield* this.slide(p, 0, -1.6, 0.6, true);
-        p.dispose();
-        t.loaded++;
-        yield* this.forks(f, 0.1, 0.4);
-        yield* this.back(f, [[tx, 10.5]]);
-      } else {
-        yield* this.go(f, [...this.laneExit(f), [tx, 11], [tx, STAND_S]], 7);
-        const p = new WT.Pallet({ status: 'Unloading', loc: `${this.id} · Bay ${bay.n} · ${t.id}` });
-        p.placeIn(this.fr, tx, YARD_PAL_Z - 1.0, 1.15, 0);
-        yield* this.slide(p, 0, 1.0, 0.5);
-        yield* this.forks(f, 1.05, 0.2);
-        this.pickUp(f, p);
-        t.loaded++;
-        yield* this.back(f, [[tx, 10.5]]);
-        yield* this.forks(f, 0.5, 0.4);
-        const slot = job.slot;
-        p.status = 'Received'; p.loc = `${this.id} · Yard slot ${slot.id}`;
-        yield* this.toSlot(f, slot);
-        yield* this.forks(f, 0.1, 0.4);
-        this.putDown(f);
-        slot.pallet = p; slot.reserved = null;
-        yield* this.leaveSlot(f, slot);
-        WT.spawn((function* () { yield* WT.sleep(12); if (!p.gone && p.status === 'Received') p.status = 'Staged'; })());
-      }
-    }
-    *relocate(f) {
-      const from = this.slotsWith((s) => s.pallet && !s.reserved && !s.pallet.priority);
-      const to = this.slotsWith((s) => !s.pallet && !s.reserved);
-      if (!from || !to) return;
-      from.reserved = to.reserved = f;
-      const p = from.pallet;
-      f.task = 'Relocating ' + p.id;
-      yield* this.toSlot(f, from);
-      this.pickUp(f, p); from.pallet = null; from.reserved = null;
-      p.status = 'Moving';
-      yield* this.forks(f, 0.5);
-      yield* this.leaveSlot(f, from);
-      yield* this.toSlot(f, to);
-      yield* this.forks(f, 0.1);
-      this.putDown(f);
-      to.pallet = p; to.reserved = null;
-      p.status = 'Staged'; p.loc = `${this.id} · Yard slot ${to.id}`;
-      yield* this.leaveSlot(f, to);
-    }
-    *worker(f) {
-      let idle = 0;
+    *dockWorker(f) {
+      const bay = f.bay;
       while (true) {
-        let did = false;
-        for (const bay of this.bays) {
-          if (!bay.docked || !bay.truck || bay.truck === 'reserved') continue;
-          const key = f.role === 'apron' ? 'apronBusy' : 'yardBusy';
-          if (bay[key]) continue;
-          const job = bay.jobs.find((j) => j.side === f.role && !j.claimed);
-          if (!job) continue;
-          job.claimed = f; bay[key] = f;
-          if (f.role === 'apron') yield* this.apronJob(f, bay, job);
-          else yield* this.yardJob(f, bay, job);
-          bay[key] = null;
-          did = true;
-          idle = 0;
-          break;
-        }
-        if (did) continue;
-        f.task = 'Idle';
-        idle += WT.sim.dt;
-        if (f.role === 'yard' && idle > 6 && Math.random() < 0.015) {
-          yield* this.relocate(f);
-          idle = 0;
+        const job = bay.docked && bay.truck && bay.truck !== 'reserved' && bay.jobs.find((j) => !j.claimed);
+        if (job) {
+          job.claimed = f; bay.busy = f;
+          yield* this.dockJob(f, bay);
+          bay.busy = null;
           continue;
         }
+        f.task = 'Idle';
         const [hx, hz, hh] = f.home, a = f.actor;
-        if (Math.hypot(a.x - hx, a.z - hz) > 1) {
+        if (Math.hypot(a.x - hx, a.z - hz) > 0.5) {
           f.task = 'Returning to base';
-          if (f.role === 'apron') yield* this.go(f, [[a.x, -3.4], [hx, hz]].filter((p, i) => i || Math.abs(a.z + 3.4) > 0.5), 6);
-          else yield* this.go(f, [...this.laneExit(f), [hx, 11.5], [hx, hz]], 7);
+          yield* this.go(f, [[hx, hz]], 4);
           yield* WT.turnTo(a, hh, 3);
         }
         yield;
       }
     }
-    makeJobs(t, bay) {
-      const jobs = [];
-      for (let i = 0; i < t.total - t.loaded; i++) {
-        const j = { side: i % 2 === 0 ? 'apron' : 'yard' };
-        if (j.side === 'yard') {
-          if (t.dir === 'out') {
-            const staged = this.slots.filter((s) => s.pallet && !s.reserved).length;
-            const s = staged > 6 ? this.slotsWith((s) => s.pallet && !s.reserved && s.pallet.status === 'Staged') : null;
-            if (s) { s.reserved = t; j.slot = s; s.pallet.status = 'Allocated'; }
-          } else {
-            const s = this.slotsWith((s) => !s.pallet && !s.reserved);
-            if (s) { s.reserved = t; j.slot = s; } else j.side = 'apron';
-          }
-        }
-        jobs.push(j);
-      }
-      bay.jobs = jobs;
+
+    /* ----- yard ↔ building through the forklift doors ----- */
+    // put a yard pallet away inside the building
+    *putAway(f, slot) {
+      const d = f.door, p = slot.pallet;
+      slot.reserved = f;
+      f.task = `Put-away ${p.id} → door F${d.n}`;
+      yield* this.toSlot(f, slot);
+      this.pickUp(f, p); slot.pallet = null; slot.reserved = null;
+      p.status = 'Moving'; p.loc = `${this.id} · ${f.id}`;
+      yield* this.forks(f, 0.5);
+      yield* this.leaveSlot(f, slot);
+      yield* this.go(f, [...this.laneExit(f), [d.x, LANE_Z], [d.x, WALL_Z + 3], [d.x, FDOOR_IN]], 6);
+      yield* this.forks(f, 0.1, 0.4);
+      this.putDown(f);
+      p.status = 'Stored'; p.loc = `${this.id} · Racking`;
+      yield* this.back(f, [[d.x, FDOOR_IN - FORK_REACH - 0.5]], 2.6);
+      yield* this.slide(p, 0, -2.5, 0.5, true);
+      p.dispose();
+      this.stock = Math.min(this.capacity, this.stock + 1);
+      this.moved++;
+      yield* WT.turnTo(f.actor, Math.PI / 2, 3);
+      yield* this.go(f, [[d.x, WALL_Z + 3], [d.x, LANE_Z]], 5);
     }
-    // called by a truck parked at the bay
+    // bring a pallet out of the building and stage it in the yard
+    *bringOut(f, slot) {
+      const d = f.door;
+      slot.reserved = f;
+      f.task = `Staging from door F${d.n} → slot ${slot.id}`;
+      yield* this.go(f, [...this.laneExit(f), [d.x, LANE_Z], [d.x, WALL_Z + 3], [d.x, FDOOR_IN]], 6);
+      const p = new WT.Pallet({ status: 'Picked', loc: `${this.id} · ${f.id}` });
+      p.placeIn(this.fr, d.x, FDOOR_IN - FORK_REACH, 0, 0);
+      this.stock--;
+      this.pickUp(f, p);
+      yield* this.forks(f, 0.5);
+      yield* this.back(f, [[d.x, WALL_Z + 3]], 2.6);
+      yield* WT.turnTo(f.actor, Math.PI / 2, 3);
+      p.status = 'Moving';
+      yield* this.go(f, [[d.x, LANE_Z]], 5);
+      yield* this.toSlot(f, slot);
+      yield* this.forks(f, 0.1);
+      this.putDown(f);
+      slot.pallet = p; slot.reserved = null;
+      p.status = 'Staged'; p.loc = `${this.id} · Yard slot ${slot.id}`;
+      this.moved++;
+      yield* this.leaveSlot(f, slot);
+    }
+    *yardWorker(f) {
+      let idle = WT.rnd(2, 8);
+      while (true) {
+        idle -= WT.sim.dt;
+        if (idle <= 0) {
+          // keep the yard about half full: put away when it fills up, stage pallets out when it empties
+          const full = this.slots.filter((s) => s.pallet).length / this.slots.length;
+          const out = full < 0.35 || (full < 0.6 && Math.random() < 0.5);
+          const slot = out ? this.slotsWith((s) => !s.pallet && !s.reserved) : this.slotsWith((s) => s.pallet && !s.reserved && !s.pallet.priority);
+          if (slot && (out ? this.stock > 20 : this.stock < this.capacity)) {
+            yield* out ? this.bringOut(f, slot) : this.putAway(f, slot);
+            idle = WT.rnd(3, 9);
+            continue;
+          }
+          idle = 4;
+        }
+        f.task = 'Idle';
+        const [hx, hz, hh] = f.home, a = f.actor;
+        if (Math.hypot(a.x - hx, a.z - hz) > 1) {
+          f.task = 'Returning to base';
+          yield* this.go(f, [...this.laneExit(f), [hx, LANE_Z - 1], [hx, hz]], 7);
+          yield* WT.turnTo(a, hh, 3);
+        }
+        yield;
+      }
+    }
+
+    // called by a truck reversed onto the dock door
     *serve(t, leg) {
       const bay = leg.dock;
       bay.truck = t;
@@ -393,18 +369,19 @@
       t.loaded = 0;
       t.status = leg.op === 'stuff' ? 'Stuffing' : t.dir === 'out' ? 'Loading' : 'Unloading';
       if (leg.op === 'stuff' && t.container) { t.container.status = 'Stuffing'; t.container.loc = this.id; WT.SUP.note(t.container, `Stuffing at ${this.id}`); }
-      t.where = `${this.id} · Bay ${bay.n}`;
+      t.where = `${this.id} · Door ${bay.n}`;
       if (t.shipment) { t.shipment.total = t.total; WT.advanceShipment(t.shipment, 2); }
       bay.docked = true;
-      this.makeJobs(t, bay);
+      bay.jobs = Array.from({ length: t.total }, () => ({}));
       while (t.loaded < t.total) {
-        if (t.shipment) { t.shipment.loaded = t.loaded; WT.updateShipment(t.shipment, Math.max(1, Math.round(WT.secToMin((t.total - t.loaded) * 9)))); }
+        if (t.shipment) { t.shipment.loaded = t.loaded; WT.updateShipment(t.shipment, Math.max(1, Math.round(WT.secToMin((t.total - t.loaded) * 7)))); }
         yield* WT.sleep(0.5);
       }
       if (t.shipment) t.shipment.loaded = t.loaded;
+      // the forklift backs out of the trailer before the door comes down and the truck pulls away
+      yield* WT.waitFor(() => !bay.busy);
       t.status = 'Sealing';
       yield* WT.sleep(1.2);
-      yield* WT.waitFor(() => !bay.apronBusy && !bay.yardBusy && this.forklifts.every((f) => Math.hypot(f.actor.x - (bay.x - 2), f.actor.z - 7) > 5));
       bay.docked = false;
       bay.jobs = [];
       if (leg.op === 'stuff' && t.container) {
@@ -412,6 +389,7 @@
         t.container.status = 'Export · sealed';
         WT.SUP.note(t.container, `Sealed at ${this.id} with ${t.total} pallets`);
       }
+      yield* WT.sleep(1.0);
       this.moves += t.total;
       WT.G && WT.G.earn(t.total * 2500, this);
     }

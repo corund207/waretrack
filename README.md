@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://github.com/corund207/waretrack/actions/workflows/ci.yml"><img src="https://github.com/corund207/waretrack/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/version-v5.2.1-2f56e0" alt="version" />
+  <img src="https://img.shields.io/badge/version-v5.3.0-2f56e0" alt="version" />
   <img src="https://img.shields.io/badge/three.js-r147-black" alt="three.js" />
   <img src="https://img.shields.io/badge/build-zero%20dependencies-3ddc84" alt="no dependencies" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" /></a>
@@ -108,6 +108,12 @@ At the factory dock each piece is swung off the top of the load onto the dock be
 the bed is bare. At a producer's shipping bay, a shuttle's bed fills from the headboard back as product comes off
 the line.
 
+**Distribution centers.** Trucks drive down the yard road, pull past their door and reverse square onto the
+dock, guided by bay lines. They pull straight out when they're done. The roller door opens, and a dock forklift
+inside drives onto the leveler and puts its forks into the trailer, one pallet at a time. Separate **forklift doors**
+between the dock doors, with yellow guard posts and marked walkways, let the yard forklifts carry pallets between
+the outdoor yard and the building. They stage stock out when the yard runs low and put it away when it fills up.
+
 **Realistic handling:** terminal appointments with a truck queue at the gate, staging lanes inside plant gates,
 street-turned empties, a container depot, and long lead times for sea freight that primary plants buffer against.
 
@@ -134,7 +140,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
   gate-in check.
 - The vehicle card's *Traffic* row says why a vehicle is waiting: red light, junction busy, exit blocked, or queued
   behind another vehicle.
-- The version is shown next to the logo (currently **v5.2.1**). Hard-refresh (Ctrl+F5) if it doesn't match.
+- The version is shown next to the logo (currently **v5.3.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
 - Vehicle variety: cab-over and long-hood rigs; box, curtainsider, reefer, tanker, coil, log, container and dump
   trailers; concrete mixers; sedans, SUVs, vans, pickups and shuttle buses. Through trains carry tank, hopper and box
   wagons, and tankers and bulk carriers pass offshore.
