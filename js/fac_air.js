@@ -1,7 +1,9 @@
 /* WareTrack – airport district: airfield, cargo terminal, stands with ULD tugs, control tower */
 (function () {
-  const T = THREE, M = WT.M, W = WT.W;
-  const AIR = (WT.AIR = { runwayZ: -525, taxiZ: -494, standZ: -445, standXs: [780, 860, 940, 1020], runway: null, planes: [], ulds: 0 });
+  const T = THREE, M = WT.M, W = WT.W, FX = WT.FX;
+  // parallel runways: 09L (z −525) for departures, 09R (z −575) for arrivals; arrivals cross 09L at the east end
+  const AIR = (WT.AIR = { runwayZ: -525, runway2Z: -575, taxiZ: -494, standZ: -445, crossX: 1130, holdZ: -548,
+    standXs: [700, 780, 860, 940, 1020, 1100], runway: null, final: null, crossing: null, planes: [], ulds: 0, arrivals: 0, departures: 0 });
 
   /* ---------- aircraft ---------- */
   let flightSeq = 721;
@@ -70,34 +72,45 @@
       this.x0 = 630;
     }
     center() { return [880, -470]; }
-    bounds() { return { x0: 620, x1: 1150, z0: -585, z1: -335 }; }
+    bounds() { return { x0: 620, x1: 1165, z0: -602, z1: -335 }; }
     radius() { return 220; }
     build() {
       const S = this.structure;
       S.position.x = this.x0;
       const L = 520, x = (v) => v - this.x0;
-      W.flat(S, L, 30, W.COL.runway, x(890), AIR.runwayZ, 0.03);
-      W.flat(S, 460, 12, W.COL.road, x(870), AIR.taxiZ, 0.032);
+      const RZ1 = AIR.runwayZ, RZ2 = AIR.runway2Z, XC = AIR.crossX;
+      for (const rz of [RZ1, RZ2]) W.flat(S, L, 30, W.COL.runway, x(890), rz, 0.03);
+      W.flat(S, 510, 12, W.COL.road, x(895), AIR.taxiZ, 0.032);
       W.flat(S, 12, 34, W.COL.road, x(660), -510, 0.031);
-      W.flat(S, 12, 34, W.COL.road, x(1018), -510, 0.031);
-      W.flat(S, 340, 80, W.COL.apron, x(900), -452, 0.034);
-      const rw = [], ty = [];
-      W.dashLine(rw, x(660), AIR.runwayZ, x(1120), AIR.runwayZ, 8, 7, 0.7);
-      for (const ex of [x(642), x(1138)]) for (let k = -5; k <= 5; k++) if (k) rw.push({ x: ex, z: AIR.runwayZ + k * 2.4, len: 9, w: 1 });
+      W.flat(S, 14, 84, W.COL.road, x(XC), (RZ2 + AIR.taxiZ) / 2, 0.031);
+      W.flat(S, 460, 80, W.COL.apron, x(900), -452, 0.034);
+      const rw = [], ty = [], hs = [];
+      for (const rz of [RZ1, RZ2]) {
+        W.dashLine(rw, x(660), rz, x(1120), rz, 8, 7, 0.7);
+        for (const ex of [x(642), x(1138)]) for (let k = -5; k <= 5; k++) if (k) rw.push({ x: ex, z: rz + k * 2.4, len: 9, w: 1 });
+        for (const ex of [x(700), x(1080)]) for (const k of [-1, 1]) rw.push({ x: ex, z: rz + k * 7, len: 22, w: 3 }); // touchdown zone bars
+      }
       W.dashes(S, rw, W.COL.mark, 0.06);
-      W.dashLine(ty, x(650), AIR.taxiZ, x(1090), AIR.taxiZ, 2.5, 1.5, 0.3);
+      W.groundText(S, '09L', x(668), RZ1, 9, 5, '#ffffff', -Math.PI / 2, 80);
+      W.groundText(S, '09R', x(668), RZ2, 9, 5, '#ffffff', -Math.PI / 2, 80);
+      W.dashLine(ty, x(650), AIR.taxiZ, x(XC), AIR.taxiZ, 2.5, 1.5, 0.3);
+      W.dashLine(ty, x(XC), RZ2, x(XC), AIR.taxiZ, 2.5, 1.5, 0.3);
       for (const sx of AIR.standXs) W.dashLine(ty, x(sx), AIR.taxiZ, x(sx), AIR.standZ + 18, 2.5, 1.5, 0.3);
       W.dashes(S, ty, W.COL.yellow, 0.07);
+      // hold-short bars before each runway crossing / line-up
+      for (const [hx, hz] of [[XC, AIR.holdZ + 4], [XC, -508], [660, -508]]) for (const o of [-0.6, 0.6]) W.dashLine(hs, x(hx) - 6, hz + o, x(hx) + 6, hz + o, 1.2, 0.6, 0.3);
+      W.dashes(S, hs, 0xf0b429, 0.071);
       const b = new M.MB();
-      for (let xx = 650; xx < 1135; xx += 22) for (const z of [-541, -509]) b.box(0.4, 0.5, 0.4, 0xf0b429, x(xx), 0, z);
-      b.box(0.3, 6, 0.3, 0x9aa1c4, x(1130), 0, -548);
-      b.boxC(3, 1.1, 1.1, 0xf08c2a, x(1131.5), 5.4, -548, 0, 0, 0);
+      for (let xx = 650; xx < 1135; xx += 22) for (const z of [-541, -509, -591, -559]) if (Math.abs(xx - XC) > 9) b.box(0.4, 0.5, 0.4, 0xf0b429, x(xx), 0, z);
+      // windsock by the threshold
+      b.box(0.3, 6, 0.3, 0x9aa1c4, x(640), 0, -600);
+      b.boxC(3, 1.1, 1.1, 0xf08c2a, x(641.5), 5.4, -600, 0, 0, 0);
       S.add(b.mesh());
     }
     *prepare() { yield* W.extendAvenue(900, -1, 352); }
     card() {
-      return this.cardBase({ kicker: 'Facility · Airfield', icon: '🛬', sub: 'Runway 09/27 · 480 m', where: AIR.runway ? 'Runway in use' : 'Runway clear',
-        rows: [['Runway', '09/27'], ['Aircraft', String(AIR.planes.length)], ['Stands', WT.facilities.filter((f) => f.type === 'Stand' && f.active).length + ' / 4']] });
+      return this.cardBase({ kicker: 'Facility · Airfield', icon: '🛬', sub: 'Parallel runways 09L / 09R · 480 m', where: (AIR.final ? 'Arrival on final' : 'Approach clear') + ' · ' + (AIR.runway ? 'departure rolling' : '09L clear'),
+        rows: [['Arrivals', '09R · ' + AIR.arrivals + ' landed'], ['Departures', '09L · ' + AIR.departures + ' flown'], ['Aircraft', String(AIR.planes.length)], ['Stands', WT.facilities.filter((f) => f.type === 'Stand' && f.active).length + ' / ' + AIR.standXs.length]] });
     }
   }
 
@@ -244,7 +257,7 @@
       WT.G && WT.G.earn(t.total * 3000, this);
     }
     card() {
-      return this.cardBase({ kicker: 'Facility · Air cargo terminal', icon: '🛫', sub: 'Landside docks + 4 stands', where: AIR.planes.length + ' aircraft',
+      return this.cardBase({ kicker: 'Facility · Air cargo terminal', icon: '🛫', sub: 'Landside docks + ' + AIR.standXs.length + ' stands', where: AIR.planes.length + ' aircraft',
         rows: [['ULDs on rack', this.rack.filter((r) => r.u).length + ' / ' + this.rack.length], ['ULDs handled', WT.fmtNum(AIR.ulds)], ['Docks', this.docks.filter((d) => d.truck).length + ' / 4 busy'], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']] });
     }
   }
@@ -347,13 +360,29 @@
       }
       tug.status = 'Idle';
     }
+    // 09L is clear of anything a crossing aircraft could meet: no departure on its roll or still low near the crossing
+    static runwayClearToCross() {
+      const p = AIR.runway;
+      return !p || p.actor.x > AIR.crossX + 40 || p.actor.y > 18;
+    }
     *cycle() {
       yield* WT.sleep(WT.rnd(2, 8));
-      const RZ = AIR.runwayZ, TZ = AIR.taxiZ, sx = this.sx, SZ = AIR.standZ;
+      const R1 = AIR.runwayZ, R2 = AIR.runway2Z, TZ = AIR.taxiZ, SZ = AIR.standZ, XC = AIR.crossX, sx = this.sx;
+      // taxiing aircraft hold for a stand pushing back across the taxiway ahead, and keep wingtip spacing
+      const blockedByPushback = (pl) => () => {
+        const a = pl.actor;
+        if (Math.abs(a.z - TZ) > 14) return false;
+        return AIR.planes.some((q) => q !== pl && q.actor.y < 3 && (
+          (q.pushZone && a.x > q.pushZone[0] && a.x - 75 < q.pushZone[1]) ||
+          // wingtip spacing: keep 48 m behind anything ahead on (or just turning off) the westbound taxiway
+          (Math.abs(q.actor.z - a.z) < 22 && q.actor.x < a.x && a.x - q.actor.x < 48)));
+      };
+      const taxiFor = (pl, o = {}) => Object.assign({ speed: 11, radius: 12, accel: 2, latAccel: 3, avoid: true, avoidGap: 50, avoidLat: 8, avoidMin: 42, hold: blockedByPushback(pl) }, o);
       while (true) {
-        yield* WT.waitFor(() => !AIR.runway);
+        // arrivals are sequenced onto 09R: one aircraft on final at a time
+        yield* WT.waitFor(() => !AIR.final);
         const plane = new Plane(this);
-        AIR.runway = plane;
+        AIR.final = plane;
         plane.manifest = WT.SUP.takeManifest('air', 3).map((po) => {
           const u = new WT.ULD();
           WT.SUP.fillPO(u, po);
@@ -364,73 +393,104 @@
           return u;
         });
         this.plane = plane;
-        const a = plane.actor, gear = plane.mesh.userData.gear;
-        let x = -900, v = 55;
-        a.place(x, RZ, 0);
+        const a = plane.actor, gear = plane.mesh.userData.gear, body = plane.mesh;
+        const TD = 690; // touchdown point
+        let x = -900, v = 58;
+        a.place(x, R2, 0);
+        gear.visible = false;
         plane.status = 'Approach';
-        WT.log(`Flight ${plane.flight} on final approach → ${this.id}`, 'blue', true);
+        WT.log(`Flight ${plane.flight} on final for 09R → ${this.id}`, 'blue', true);
         WT.emit('event', { kind: 'plane', ent: plane, weight: 3 });
-        while (x < 680) {
-          x += v * WT.sim.dt;
-          v = Math.max(44, v - 0.4 * WT.sim.dt);
-          a.y = Math.max(0, 110 * (680 - x) / 1580);
-          plane.mesh.rotation.z = 0.05;
+        // 3° glide path, gear down at 50 m, then a flare over the last 160 m: nose up, sink rate bleeds off
+        while (x < TD) {
+          const dt = WT.sim.dt;
+          x += v * dt;
+          v = Math.max(46, v - 0.35 * dt);
+          const togo = TD - x, flare = WT.clamp(1 - togo / 160, 0, 1);
+          const glide = 110 * togo / 1590;
+          a.y = Math.max(0, glide * (1 - flare) + glide * flare * (1 - WT.ease(flare)) * 0.6);
+          body.rotation.z = WT.lerp(0.04, 0.12, WT.ease(flare));
           gear.visible = a.y < 50;
-          a.place(x, RZ, 0);
+          a.place(x, R2, 0);
           yield;
         }
-        plane.status = 'Landing';
-        plane.mesh.rotation.z = 0;
+        // touchdown: tyre smoke off both main gears, nose wheel lowers onto the runway
         a.y = 0;
-        while (x < 990) {
-          v = Math.max(9, Math.sqrt(Math.max(0, 9 * 9 + 2 * 5.5 * (990 - x))));
-          x += Math.min(v, 44) * WT.sim.dt;
-          a.place(x, RZ, 0);
+        AIR.final = null; // the next arrival may start its approach
+        AIR.arrivals++;
+        plane.status = 'Landing';
+        for (let k = 0; k < 6; k++) for (const s of [-1, 1]) FX.puff(x - 2 - k * 0.8, 0.6, R2 + s * 3.6, { size0: 1.5, size1: 6, life: 1.6, vy: 0.6, op: 0.55, color: 0xeef0f8 });
+        let nose = 0;
+        while (x < 1050) {
+          const dt = WT.sim.dt;
+          v = Math.max(11, v - 4.2 * dt);
+          x += v * dt;
+          nose = Math.min(1, nose + dt / 1.6);
+          body.rotation.z = 0.12 * (1 - WT.ease(nose));
+          a.place(x, R2, 0);
           yield;
         }
-        a.speed = 9;
+        body.rotation.z = 0;
+        a.speed = v;
         plane.status = 'Taxiing';
-        yield* WT.drive(a, [[990, RZ], [1018, RZ], [1018, TZ], [sx, TZ], [sx, SZ]], {
-          speed: 10, radius: 12, accel: 2, latAccel: 3, avoid: true, avoidGap: 50, avoidLat: 8, avoidMin: 42,
-          onTick: (s) => { if (s > 50 && AIR.runway === plane) AIR.runway = null; },
-        });
-        if (AIR.runway === plane) AIR.runway = null;
+        // vacate 09R at the east end and hold short of 09L
+        yield* WT.drive(a, [[1050, R2], [XC, R2], [XC, AIR.holdZ]], taxiFor(plane, { speed: 9 }));
+        if (!Stand.runwayClearToCross() || AIR.crossing) {
+          plane.status = 'Holding short 09L';
+          yield* WT.waitFor(() => Stand.runwayClearToCross() && !AIR.crossing);
+        }
+        AIR.crossing = plane;
+        plane.status = 'Crossing 09L';
+        let crossed = false;
+        yield* WT.drive(a, [[XC, AIR.holdZ], [XC, TZ], [sx, TZ], [sx, SZ]], taxiFor(plane, {
+          onTick: () => { if (!crossed && a.z > R1 + 22) { crossed = true; if (AIR.crossing === plane) AIR.crossing = null; plane.status = 'Taxiing'; } },
+        }));
+        if (AIR.crossing === plane) AIR.crossing = null;
         plane.status = 'On stand';
         const sh = WT.createShipment({ mode: 'air', to: plane.dest, carrier: 'WareTrack Air', vehicle: plane, total: 3, transit: WT.rint(120, 300) });
         plane.shipment = sh;
         yield* this.uldOps(plane, sh);
+        // pushback is only approved once the taxiway behind the stand is clear of taxiing aircraft
+        plane.status = 'Awaiting pushback';
+        yield* WT.waitFor(() => AIR.planes.every((p) => p === plane || p.actor.y > 3 || Math.abs(p.actor.z - TZ) > 24 || p.actor.x < sx - 70 || p.actor.x > sx + 110));
+        plane.pushZone = [sx - 30, sx + 45]; // taxiway stretch reserved for the pushback
         plane.status = 'Pushback';
-        yield* WT.sleep(1.5);
-        yield* WT.drive(a, [[sx, SZ], [sx, TZ + 8], [sx + 12, TZ]], { speed: 2.4, reverse: true, radius: 8, avoid: true, avoidGap: 50, avoidLat: 10, avoidMin: 40 });
+        yield* WT.sleep(1.2);
+        yield* WT.drive(a, [[sx, SZ], [sx, TZ + 8], [sx + 12, TZ]], { speed: 2.4, reverse: true, radius: 8 });
+        plane.pushZone = null;
         plane.status = 'Taxiing';
-        yield* WT.drive(a, [[sx + 12, TZ], [668, TZ]], { speed: 10, radius: 10, accel: 2, avoid: true, avoidGap: 50, avoidLat: 8, avoidMin: 42 });
+        yield* WT.drive(a, [[sx + 12, TZ], [668, TZ]], taxiFor(plane));
         plane.status = 'Holding';
-        yield* WT.waitFor(() => !AIR.runway);
+        // departures own 09L; wait for the runway and for nobody crossing it
+        yield* WT.waitFor(() => !AIR.runway && !AIR.crossing);
         AIR.runway = plane;
-        plane.status = 'Line up';
-        yield* WT.drive(a, [[668, TZ], [658, TZ], [658, RZ], [700, RZ]], { speed: 7, radius: 10, accel: 2, latAccel: 3 });
+        plane.status = 'Line up 09L';
+        yield* WT.drive(a, [[668, TZ], [658, TZ], [658, R1], [700, R1]], { speed: 7, radius: 10, accel: 2, latAccel: 3 });
         plane.status = 'Takeoff';
-        WT.log(`Flight ${plane.flight} departing → ${plane.dest}`, 'green', true);
+        WT.log(`Flight ${plane.flight} departing 09L → ${plane.dest}`, 'green', true);
         WT.emit('event', { kind: 'plane', ent: plane, weight: 2 });
-        let px = 700, pv = a.speed || 4;
+        let px = 700, pv = a.speed || 4, rot = 0;
         while (px < W.EDGE + 600) {
-          pv = Math.min(75, pv + 7 * WT.sim.dt);
-          px += pv * WT.sim.dt;
-          if (pv > 40) {
-            a.y += (pv - 32) * 0.28 * WT.sim.dt;
-            plane.mesh.rotation.z = Math.min(0.16, plane.mesh.rotation.z + 0.2 * WT.sim.dt);
+          const dt = WT.sim.dt;
+          pv = Math.min(78, pv + 7.5 * dt);
+          px += pv * dt;
+          // rotate at Vr, lift off, climb out; gear up once safely airborne
+          if (pv > 36) rot = Math.min(1, rot + dt / 2.2);
+          body.rotation.z = 0.17 * WT.ease(rot);
+          if (pv > 41) {
+            a.y += (pv - 33) * 0.3 * dt;
             if (a.y > 8) gear.visible = false;
-            if (sh.stage < 3) { plane.status = 'Climbing'; WT.advanceShipment(sh, 3); }
+            if (sh.stage < 3) { plane.status = 'Climbing'; WT.advanceShipment(sh, 3); AIR.departures++; }
             if (a.y > 18 && AIR.runway === plane) AIR.runway = null;
-          }
-          a.place(px, RZ, 0);
+          } else if (Math.random() < 0.3) FX.puff(px - 14, 4, R1 + WT.rnd(-7, 7), { size0: 1.2, size1: 4, life: 0.8, vy: 0.4, op: 0.25, color: 0xdfe3f2 });
+          a.place(px, R1, 0);
           yield;
         }
         if (AIR.runway === plane) AIR.runway = null;
         plane.remove();
         this.plane = null;
         WT.G && WT.G.earn(60000, this);
-        yield* WT.sleep(WT.rnd(6, 20));
+        yield* WT.sleep(WT.rnd(3, 10));
       }
     }
     card() {
@@ -466,7 +526,7 @@
       this.structure.add(this.radar);
     }
     activate() { super.activate(); WT.on('frame', () => (this.radar.rotation.y += WT.sim.dt * 1.4)); }
-    card() { return this.cardBase({ kicker: 'Air traffic control', icon: '📡', sub: 'Skyport Tower', where: AIR.runway ? 'Runway in use' : 'Runway clear', rows: [['Wind', '270° / 9 kt'], ['Active runway', '09']] }); }
+    card() { return this.cardBase({ kicker: 'Air traffic control', icon: '📡', sub: 'Skyport Tower', where: AIR.final ? 'Flight ' + AIR.final.flight + ' on final' : 'Sequencing', rows: [['Wind', '270° / 9 kt'], ['Arrivals', '09R'], ['Departures', '09L'], ['Crossing', AIR.crossing ? AIR.crossing.flight : '—']] }); }
   }
 
   WT.Airfield = Airfield; WT.AirTerminal = AirTerminal; WT.Stand = Stand; WT.Tower = Tower;

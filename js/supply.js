@@ -177,8 +177,10 @@
         return [{ fac: wh, op: 'stuff', dock: d1 }, { fac: tm, op: 'drop', lazy: true }];
       }
     }
-    const dep = active('Container depot').filter((f) => f.freeDocks('drop-empty') && f.room() > 1);
-    if (dep.length) { const d = WT.pick(dep); t.mission = 'Return empty → ' + d.id; return [{ fac: d, op: 'drop-empty' }]; }
+    // every depot visit is an appointment taken at its gate, so nobody holds the RTG lane from outside
+    const dep = active('Container depot').filter((f) => f.room() > 1 && (f.lazyN || 0) < 4);
+    if (dep.length) { const d = WT.pick(dep); d.lazyN = (d.lazyN || 0) + 1; t.mission = 'Return empty → ' + d.id; return [{ fac: d, op: 'drop-empty', lazy: true }]; }
+    if (active('Container depot').length) return null; // depot full right now: head out, the box goes back via the interstate
     if (term.length) { const tm = WT.pick(term); tm.pendingDrop++; tm.lazyN = (tm.lazyN || 0) + 1; t.mission = 'Reposition empty → ' + tm.id; return [{ fac: tm, op: 'drop', lazy: true }]; }
     return null;
   };
@@ -274,10 +276,10 @@
         const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80), 'stuff');
         if (!tm.length || !wh) return false;
         const term = WT.pick(tm);
-        const dep = active('Container depot').filter((d) => d.freeDocks('pick-empty') && d.count() > 2);
+        const dep = active('Container depot').filter((d) => d.count() > 2 && (d.lazyN || 0) < 3);
         const legs = [];
         let c = null;
-        if (dep.length) legs.push({ fac: WT.pick(dep), op: 'pick-empty' });
+        if (dep.length) legs.push({ fac: WT.pick(dep), op: 'pick-empty', lazy: true });
         else { c = S.newContainer(term.type === 'Port terminal' ? 5.8 : 11); S.note(c, 'Empty positioned from off-site depot'); }
         legs.push({ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true });
         const t = launch({ variant: 'flat', carrier: carrier(), container: c, mission: `Export: ${wh.id} → ${term.id}` }, legs);
@@ -287,26 +289,43 @@
       },
     },
     {
-      w: 1, go() {
-        const tm = terminals().filter((f) => (f.lazyN || 0) < 3 && f.stackRoom() - f.pendingDrop > 4 && f.exportCount() < 3);
-        const dep = active('Container depot').filter((d) => d.freeDocks('pick-empty') && d.count() > 10);
-        if (!tm.length || !dep.length) return false;
-        const term = WT.pick(tm);
-        const t = launch({ variant: 'flat', carrier: carrier(), mission: `Empty reposition → ${term.id}` }, [{ fac: WT.pick(dep), op: 'pick-empty' }, { fac: term, op: 'drop', lazy: true }]);
-        if (t) term.pendingDrop++;
-        return !!t;
+      // a nearly full depot sends surplus empties back to the shipping lines off-site, keeping room for the terminals
+      w: 3, go() {
+        const dep = active('Container depot').filter((d) => d.room() < 20 && (d.lazyN || 0) < 3);
+        if (!dep.length) return false;
+        const d = WT.pick(dep);
+        return !!launch({ variant: 'flat', carrier: carrier(), spawnX: near(d.plot.A), mission: `Empty return: ${d.id} → shipping line` }, [{ fac: d, op: 'pick-empty', lazy: true }]);
       },
     },
   ];
 
+  // empties left at a port or rail yard are trucked to the empty-container depot (they never ride a train or ship);
+  // runs on its own clock so terminals are cleared even when the roads are too busy for optional work
+  function evacuateEmpty() {
+    const dep = active('Container depot').filter((d) => d.room() > 2 && (d.lazyN || 0) < 5);
+    if (!dep.length) return false;
+    const terms = terminals().filter((f) => (f.lazyN || 0) < 4 && f.emptyOnTop && f.emptyOnTop()).sort((a, b) => b.emptyCount() - a.emptyCount());
+    const term = terms[0];
+    if (!term) return false;
+    const c = term.emptyOnTop();
+    c.reserved = true;
+    const d = dep.reduce((a, b) => (Math.abs(b.plot.A - term.A) < Math.abs(a.plot.A - term.A) ? b : a));
+    const t = launch({ variant: 'flat', carrier: carrier(), spawnX: near(term.A), mission: `Empty ${c.id}: ${term.id} → ${d.id}` }, [{ fac: term, op: 'pick', cont: c, lazy: true }, { fac: d, op: 'drop-empty', lazy: true }]);
+    if (!t) { c.reserved = false; return false; }
+    WT.SUP.note(c, `Empty collected for ${d.id}`);
+    return true;
+  }
+
   S.truckCap = () => Math.min(140, 10 + WT.facilities.filter((f) => f.active && f.docks.length).length * 4);
   S.start = function () {
     WT.spawn((function* () {
-      let mrpT = 0;
+      let mrpT = 0, evacT = 0;
       while (true) {
         yield* WT.sleep(0.4);
         mrpT += 0.4;
         if (mrpT > 1.5) { mrpT = 0; mrp(); }
+        evacT += 0.4;
+        if (evacT > 6 && !S.holding) { evacT = 0; evacuateEmpty(); }
         // purchase orders always take priority over everything else, but dispatch meters
         // trucks onto the network when the roads are congested
         const jam = WT.TR.jam;

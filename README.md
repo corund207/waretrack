@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://github.com/corund207/waretrack/actions/workflows/ci.yml"><img src="https://github.com/corund207/waretrack/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/version-v5.4.0-2f56e0" alt="version" />
+  <img src="https://img.shields.io/badge/version-v5.5.0-2f56e0" alt="version" />
   <img src="https://img.shields.io/badge/three.js-r147-black" alt="three.js" />
   <img src="https://img.shields.io/badge/build-zero%20dependencies-3ddc84" alt="no dependencies" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" /></a>
@@ -108,11 +108,33 @@ At the factory dock each piece is swung off the top of the load onto the dock be
 the bed is bare. At a producer's shipping bay, a shuttle's bed fills from the headboard back as product comes off
 the line.
 
-**Twin-gantry rail terminals.** Each intermodal yard runs two rail-mounted gantries on one pair of rails, with
-two truck spots under them. Each crane claims the stretch of rail it needs before a lift, so they can't collide
-or pass each other. Each takes the nearest waiting job, with trucks weighted ahead of the train, so both cranes
-work a train and the trucks at the same time. A crane steps aside when the other needs its rail. In a controlled
-test, a train with 6 boxes to discharge and 4 to load turned around in 193 s, against 321 s with one crane.
+**Container terminals (rail yards and seaport) run on one shared engine**, `js/terminal.js`:
+- **Two cranes acting as one.** A split line divides the yard between them and follows the queued work. Each crane
+  takes only lifts on its own side, so both work at the same time without blocking each other. When one crane runs
+  short of work the line shifts toward it. A lift that spans both sides goes ahead with rail claims, and the other
+  crane steps aside, with trucks taking priority.
+- **Truck lanes with a bypass.** Each crane area has a service lane with numbered spots and a bypass lane beside it,
+  so trucks can drive around parked ones and enter or leave in any order. Each spot has a straight run-in, so the
+  rig is square before it stops.
+- **Forward thinking.** At the gate a truck is given the spot nearest its box. Once it's a few seconds out, the crane
+  is already lifting the box and holding it over the spot. Trucks are dispatched as soon as their train or ship
+  arrives, and a box still aboard goes straight from wagon or deck onto the truck.
+- **Never parked.** An idle crane moves to where its next work will be, or restacks boxes nearer the truck spots.
+- **Empties go to the depot by truck.** They never ride a train or ship. A nearly full depot sends surplus empties
+  back to the shipping lines.
+
+**Seaport traffic.** Separate inbound and outbound tracks, and an anchorage where the next ship waits while the berth
+is busy. Ships enter and leave only with clearance, two harbour tugs escort them on and off the berth, and moving
+ships leave a wake.
+
+**Airport.** Parallel runways: 09R for arrivals, 09L for departures. Arrivals cross 09L at the east end only when it's
+clear, and departures never roll while anything is crossing. There are six stands, pushback clearance with a
+reserved stretch of taxiway, and wingtip spacing on the taxiway. Landings flare with tyre smoke at touchdown, and
+departures rotate at take-off.
+
+**Roads.** The highway and avenues have two lanes each way. Turns that stay on your own side of the road use the
+outer lane; turns across traffic use the inner lane. Vehicles pick their lane when they join the highway, and
+trucks take wider, smoother corners.
 
 **Distribution centers.** Trucks drive down the yard road, pull past their door and reverse square onto the
 dock, guided by bay lines. They pull straight out when they're done. The roller door opens, and a dock forklift
@@ -146,7 +168,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
   gate-in check.
 - The vehicle card's *Traffic* row says why a vehicle is waiting: red light, junction busy, exit blocked, or queued
   behind another vehicle.
-- The version is shown next to the logo (currently **v5.4.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
+- The version is shown next to the logo (currently **v5.5.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
 - Vehicle variety: cab-over and long-hood rigs; box, curtainsider, reefer, tanker, coil, log, container and dump
   trailers; concrete mixers; sedans, SUVs, vans, pickups and shuttle buses. Through trains carry tank, hopper and box
   wagons, and tankers and bulk carriers pass offshore.

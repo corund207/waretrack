@@ -12,8 +12,13 @@
   W.EDGE = 1700;
   W.SEA_Z = 600;
   W.RAIL = { zE: -650, zW: -662 };
-  W.HW_LANE = 3.2;
-  W.PLOT_K = 4;
+  // two lanes each way: highway lanes at |z| 2.0 / 5.6, avenue lanes at |x − A| 1.9 / 5.5 (inner / outer)
+  W.HW_IN = 2.0; W.HW_OUT = 5.6; W.AV_IN = 1.9; W.AV_OUT = 5.5;
+  W.HW_LANE = W.HW_IN;
+  W.hwLaneZ = (dir, outer) => (dir > 0 ? 1 : -1) * (outer ? W.HW_OUT : W.HW_IN);
+  // avenue lane x for a vehicle heading along z with sign vz (−z on the east side, +z on the west side)
+  W.avLaneX = (A, vz, outer) => A + (vz < 0 ? 1 : -1) * (outer ? W.AV_OUT : W.AV_IN);
+  W.PLOT_K = 5; // plot rows per avenue side (row 5 ends at |z| 549, short of the rail yards, ports and airfield)
 
   /* ---------- helpers ---------- */
   W.flat = function (parent, w, d, color, x, z, y = 0.02) {
@@ -105,13 +110,13 @@
     W.builtAbsX = Math.max(W.builtAbsX, Math.abs(A) + 120);
     if (!st.built) {
       st.built = true;
-      W.flat(WT.scene, 14, 14, COL.road, A, 0, 0.032);
+      W.flat(WT.scene, 17, 17, COL.road, A, 0, 0.032);
       WT.TR.addJunction(A);
     }
     const g = new T.Group();
     g.position.set(A, 0, h * from);
     g.rotation.y = h < 0 ? Math.PI : 0;
-    const geo = new T.PlaneGeometry(12, len);
+    const geo = new T.PlaneGeometry(15, len);
     geo.rotateX(-Math.PI / 2);
     geo.translate(0, 0, len / 2);
     const road = new T.Mesh(geo, M.mat(COL.road));
@@ -119,18 +124,19 @@
     road.receiveShadow = true;
     g.add(road);
     const dl = [];
-    W.dashLine(dl, 0, 0, 0, len, 3, 3, 0.3);
+    for (const x of [-0.22, 0.22]) W.dashLine(dl, x, 0, x, len, len, 0, 0.14);
+    for (const x of [-3.7, 3.7]) W.dashLine(dl, x, 0, x, len, 3, 4, 0.22);
     W.dashes(g, dl, COL.mark, 0.055);
     const edge = [];
-    W.dashLine(edge, -5.6, 0, -5.6, len, len, 0, 0.18);
-    W.dashLine(edge, 5.6, 0, 5.6, len, len, 0, 0.18);
+    W.dashLine(edge, -7.1, 0, -7.1, len, len, 0, 0.18);
+    W.dashLine(edge, 7.1, 0, 7.1, len, len, 0, 0.18);
     W.dashes(g, edge, COL.mark, 0.055);
     // street lamps both sides
     const lb = new M.MB();
     // none past |z| 556: the rail and port terminals' gate lanes cross the avenue ends there
     for (let z = 14; z < len; z += 34) {
-      if (from + z < 556) M.lampInto(lb, -7.6, z, 0);
-      if (from + z + 17 < 556) M.lampInto(lb, 7.6, z + 17, Math.PI);
+      if (from + z < 556) M.lampInto(lb, -8.4, z, 0);
+      if (from + z + 17 < 556) M.lampInto(lb, 8.4, z + 17, Math.PI);
     }
     if (lb.p.length) g.add(lb.mesh());
     g.scale.z = 0.001;
@@ -150,34 +156,45 @@
   W.avenueReach = (A, h) => (W.av[A] ? W.av[A][h < 0 ? 'north' : 'south'] : 0);
 
   /* ---------- routing ---------- */
-  const laneZ = (dir) => (dir > 0 ? W.HW_LANE : -W.HW_LANE);
+  const laneZ = (dir) => W.hwLaneZ(dir, false);
   W.edgeX = () => Math.min(W.EDGE, W.builtAbsX + 650);
   W.spawnPoint = (side) => (side === 'W' ? [-W.edgeX(), laneZ(1)] : [W.edgeX(), laneZ(-1)]);
-  // from/to: {edge:'W'|'E'} or {A, z}
+  // from/to: {edge:'W'|'E'} or {A, z} or {hw: x}
+  // Lane discipline at the junctions: a turn that stays on its own side of the road (onto / off the near
+  // carriageway) runs in the outer lanes; a turn across the other carriageway runs in the inner lanes. So turning
+  // traffic queues in its own lane and through traffic keeps moving. Vehicles pick their highway lane on entry and
+  // change at most once, well clear of any junction.
   W.route = function (from, to) {
     if (from.A !== undefined && to.A !== undefined && from.A === to.A) {
-      const laneX = to.A + (to.z < from.z ? 3 : -3);
-      return [[laneX, from.z], [laneX, to.z]];
+      const vz = to.z < from.z ? -1 : 1, lx = W.avLaneX(to.A, vz, false);
+      return [[lx, from.z], [lx, to.z]];
     }
     const pts = [];
     const tx = to.edge ? (to.edge === 'W' ? -W.edgeX() : W.edgeX()) : to.A;
-    let dir;
-    if (from.hw !== undefined) {
-      dir = Math.sign(tx - from.hw) || 1;
-      pts.push([from.hw, laneZ(dir)]);
-    } else if (from.edge) {
-      const x = from.edge === 'W' ? -W.edgeX() : W.edgeX();
-      dir = Math.sign(tx - x) || 1;
-      pts.push([x, laneZ(dir)]);
-    } else {
-      dir = Math.sign(tx - from.A) || 1;
-      const lx = from.A + (from.z < 0 ? -3 : 3);
-      pts.push([lx, from.z], [lx, laneZ(dir)]);
-    }
-    if (to.edge) pts.push([tx, laneZ(dir)]);
+    const sx = from.hw !== undefined ? from.hw : from.edge ? (from.edge === 'W' ? -W.edgeX() : W.edgeX()) : from.A;
+    const dir = Math.sign(tx - sx) || 1, side = dir > 0 ? 1 : -1;
+    // lane needed at the far end: leaving onto an avenue on the near side → outer, across → inner; edge → inner
+    const exitOuter = to.edge ? false : Math.sign(to.z) === side;
+    let entryOuter = exitOuter;
+    if (from.hw !== undefined || from.edge) pts.push([sx, W.hwLaneZ(dir, entryOuter)]);
     else {
-      const lx = to.A + (to.z < 0 ? 3 : -3);
-      pts.push([lx, laneZ(dir)], [lx, to.z]);
+      const h = Math.sign(from.z) || 1;
+      entryOuter = h === side; // joining the near carriageway from this side of the highway
+      const lx = W.avLaneX(from.A, -h, entryOuter);
+      pts.push([lx, from.z], [lx, W.hwLaneZ(dir, entryOuter)]);
+    }
+    if (entryOuter !== exitOuter) {
+      // one lane change, 45 m after the entry junction, never inside a junction box
+      let x0 = sx + dir * 45;
+      const J = WT.TR ? WT.TR.junctions.map((j) => j.x) : [];
+      while (J.some((jx) => Math.abs(jx - x0) < 30 || Math.abs(jx - (x0 + dir * 30)) < 30)) x0 += dir * 20;
+      if ((tx - (x0 + dir * 30)) * dir > 25) pts.push([x0, W.hwLaneZ(dir, entryOuter)], [x0 + dir * 30, W.hwLaneZ(dir, exitOuter)]);
+      else entryOuter = exitOuter;
+    }
+    if (to.edge) pts.push([tx, W.hwLaneZ(dir, exitOuter)]);
+    else {
+      const h = Math.sign(to.z) || 1, lx = W.avLaneX(to.A, h, exitOuter);
+      pts.push([lx, W.hwLaneZ(dir, exitOuter)], [lx, to.z]);
     }
     return pts;
   };
@@ -323,13 +340,14 @@
   /* ---------- base world ---------- */
   W.build = function (scene) {
     W.flat(scene, 7000, 7000, COL.ground, 0, 0, 0);
-    W.flat(scene, (W.EDGE + 400) * 2, 14, COL.road, 0, 0, 0.03);
+    W.flat(scene, (W.EDGE + 400) * 2, 16, COL.road, 0, 0, 0.03);
     const d = [];
-    W.dashLine(d, -W.EDGE - 400, 0, W.EDGE + 400, 0, 5, 5, 0.4);
+    for (const z of [-0.25, 0.25]) W.dashLine(d, -W.EDGE - 400, z, W.EDGE + 400, z, 4200, 0, 0.16);
+    for (const z of [-3.8, 3.8]) W.dashLine(d, -W.EDGE - 400, z, W.EDGE + 400, z, 4, 6, 0.24);
     W.dashes(scene, d, COL.mark, 0.055);
     const e = [];
-    W.dashLine(e, -W.EDGE - 400, -6.4, W.EDGE + 400, -6.4, 4200, 0, 0.22);
-    W.dashLine(e, -W.EDGE - 400, 6.4, W.EDGE + 400, 6.4, 4200, 0, 0.22);
+    W.dashLine(e, -W.EDGE - 400, -7.6, W.EDGE + 400, -7.6, 4200, 0, 0.22);
+    W.dashLine(e, -W.EDGE - 400, 7.6, W.EDGE + 400, 7.6, 4200, 0, 0.22);
     W.dashes(scene, e, COL.mark, 0.055);
     // coast
     W.flat(scene, 7000, 10, 0xdfe2f2, 0, W.SEA_Z - 3, 0.026);

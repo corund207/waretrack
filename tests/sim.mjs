@@ -115,22 +115,31 @@ function auditPaths() {
   // name the thing that was hit: an entity whose mesh contains it (containers, vehicles) or its size
   const describe = (o) => {
     const byMesh = new Map([...WT.entities.values()].filter((e) => e.mesh).map((e) => [e.mesh, e]));
-    for (let q = o; q; q = q.parent) { const e = byMesh.get(q); if (e) return `${e.kind} ${e.id} (${e.status || ''}${e.loc ? ' @ ' + e.loc : ''})`; }
-    const sz = new T.Box3().setFromObject(o).getSize(new T.Vector3());
-    return `${o.type} ${sz.x.toFixed(1)}×${sz.y.toFixed(1)}×${sz.z.toFixed(1)}`;
+    const bb = new T.Box3().setFromObject(o), sz = bb.getSize(new T.Vector3()), c = bb.getCenter(new T.Vector3());
+    const shape = `${o.type} ${sz.x.toFixed(1)}×${sz.y.toFixed(1)}×${sz.z.toFixed(1)} at ${c.x.toFixed(0)},${c.z.toFixed(0)}`;
+    for (let q = o; q; q = q.parent) { const e = byMesh.get(q); if (e && e.kind !== 'facility') return `${e.kind} ${e.id} (${e.status || ''}${e.loc ? ' @ ' + e.loc : ''})`; }
+    return shape;
   };
   let checked = 0;
   function check(pts, label, rev) {
     checked++;
-    const p = WT.buildPath(pts, 5), out = [], targets = targetsFor(pts);
+    const p = WT.buildPath(pts, WT.TR.TRUCK_R || 5), out = [], targets = targetsFor(pts);
+    // a point `d` metres along the path, extended straight past either end
+    const along = (d) => {
+      if (d >= 0 && d <= p.len) return p.at(d);
+      const e = p.at(d < 0 ? 0 : p.len), k = d < 0 ? d : d - p.len;
+      return { x: e.x + Math.cos(e.a) * k, z: e.z + Math.sin(e.a) * k, a: e.a };
+    };
     for (let s = 0; s <= p.len; s += 1.0) {
-      const q = p.at(s), hd = rev ? q.a + Math.PI : q.a, nx = -Math.sin(hd), nz = Math.cos(hd), fx = Math.cos(hd), fz = Math.sin(hd);
+      const q = p.at(s);
       for (const lon of [-7.2, -3.6, 0, 3.4, 6.4]) for (const off of [-1.55, 0, 1.55]) {
-        org.set(q.x + nx * off + fx * lon, 12, q.z + nz * off + fz * lon);
+        // articulated rig: each body point rides on the path at its own distance ahead/behind
+        const b = along(rev ? s - lon : s + lon), nx = -Math.sin(b.a), nz = Math.cos(b.a);
+        org.set(b.x + nx * off, 12, b.z + nz * off);
         if (treeHit(org.x, org.z)) { out.push({ label, at: [Math.round(org.x), Math.round(org.z)], hit: 'tree' }); continue; }
         ray.set(org, down);
         const h = ray.intersectObjects(targets, false).find((h) => h.point.y > 0.35 && h.point.y < 4.6);
-        if (h) out.push({ label, at: [Math.round(q.x), Math.round(q.z)], y: +h.point.y.toFixed(1), hit: owner(h.object), what: describe(h.object) });
+        if (h) out.push({ label, at: [Math.round(q.x), Math.round(q.z)], y: +h.point.y.toFixed(1), hit: owner(h.object), what: describe(h.object), local: h.object.worldToLocal(h.point.clone()).toArray().map((v) => +v.toFixed(1)), org: [+org.x.toFixed(1), +org.z.toFixed(1)] });
       }
     }
     return out;

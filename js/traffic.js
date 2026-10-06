@@ -20,9 +20,9 @@
   TR.remove = (v) => { const i = TR.vehicles.indexOf(v); if (i >= 0) TR.vehicles.splice(i, 1); };
 
   function roadClass(x, z) {
-    for (const j of TR.junctions) if (Math.abs(x - j.x) < 8.5 && Math.abs(z) < 8.5) return 4;
-    if (Math.abs(z) < 8) return 3;
-    for (const A in W.av) if (Math.abs(x - A) < 7) return 2;
+    for (const j of TR.junctions) if (Math.abs(x - j.x) < 8.8 && Math.abs(z) < 8.8) return 4;
+    if (Math.abs(z) < 8.2) return 3;
+    for (const A in W.av) if (Math.abs(x - A) < 7.8) return 2;
     return 1;
   }
   const tmpA = [], tmpB = [], tmpG = [];
@@ -30,6 +30,7 @@
   const _fp = new THREE.Vector3(), _ff = new THREE.Vector3();
   TR.addProxy = (fork) => TR.add({ proxyOf: fork, id: fork.id, actor: { x: 0, z: 0, h: 0, speed: 0 }, circ: [-0.6, 1.4], r: 1.4, half: 1.0, front: 2.6, bodies: [], pred: [], ghost: new Map(), prio: -1, driving: false });
   TR.clock = 0;
+  TR.TRUCK_R = 6.5; // corner fillet radius for rigs (the path audit uses the same)
   TR.jam = 0; // smoothed share of moving-traffic road users currently stuck in a queue
   TR.prepass = function () {
     TR.clock += WT.sim.dt;
@@ -57,7 +58,9 @@
       v.pred.length = 0;
       if (v.driving && v.path) {
         const ve = Math.max(a.speed, 3.5);
-        for (const t of T_PRED) { const p = v.path.at(v.s + ve * t); v.pred.push(p.x, p.z); }
+        // a vehicle held at a stop line only claims road up to that line, not into the junction it is waiting for
+        const lim = v.stopAt === undefined ? Infinity : v.stopAt;
+        for (const t of T_PRED) { const p = v.path.at(Math.min(v.s + ve * t, Math.max(v.s, lim))); v.pred.push(p.x, p.z); }
       }
       // class by the vehicle's nose: once the front is in a junction it is committed
       const nose = roadClass(a.x + ch * v.front * 0.8, a.z + sh * v.front * 0.8);
@@ -128,7 +131,7 @@
       if (Math.cos(a.h - o.actor.h) > 0.8 && relx * ch + relz * sh < 0) continue;
       for (let i = 0; i < v.pred.length; i += 2) {
         const dx = v.pred[i] - o.pred[i], dz = v.pred[i + 1] - o.pred[i + 1];
-        if (dx * dx + dz * dz < 4.4 * 4.4) {
+        if (dx * dx + dz * dz < 3.0 * 3.0) { // lanes are 3.6–4 m apart: only genuinely crossing paths count
           if (yields(v, o)) {
             const dC = Math.max(a.speed, 3.5) * T_PRED[i >> 1];
             const l = Math.sqrt(2 * DEC * Math.max(0, dC - v.front - 3.5));
@@ -156,16 +159,16 @@
       const g = new T.Group();
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         const p = M.signalPole(this.mats, sx < 0 ? Math.PI : 0, sz < 0 ? Math.PI / 2 : -Math.PI / 2);
-        p.position.set(x + sx * 9.5, 0, sz * 9.5);
+        p.position.set(x + sx * 10.6, 0, sz * 10.6);
         g.add(p);
       }
       const bars = [];
       for (const s of [-1, 1]) {
-        W.dashLine(bars, x + s * 9.2, s > 0 ? -6.2 : 0.2, x + s * 9.2, s > 0 ? -0.2 : 6.2, 6, 0, 0.6);
-        W.dashLine(bars, s > 0 ? x - 5.6 : x + 0.2, s * 9.2, s > 0 ? x - 0.2 : x + 5.6, s * 9.2, 5.4, 0, 0.6);
+        W.dashLine(bars, x + s * 9.6, s > 0 ? -7.4 : 0.4, x + s * 9.6, s > 0 ? -0.4 : 7.4, 7, 0, 0.6);
+        W.dashLine(bars, s > 0 ? x - 7.2 : x + 0.4, s * 9.6, s > 0 ? x - 0.4 : x + 7.2, s * 9.6, 6.8, 0, 0.6);
       }
       const zebra = [];
-      for (const s of [-1, 1]) for (let k = -5; k <= 5; k += 1.4) zebra.push({ x: x + k, z: s * 11.5, len: 0.7, w: 2.6 });
+      for (const s of [-1, 1]) for (let k = -7; k <= 7; k += 1.4) zebra.push({ x: x + k, z: s * 12.2, len: 0.7, w: 2.6 });
       W.dashes(g, bars, 0xffffff, 0.06);
       W.dashes(g, zebra, 0xf8f9ff, 0.058);
       WT.scene.add(g);
@@ -200,7 +203,7 @@
   function stopsFor(path) {
     const out = [];
     for (const j of TR.junctions) {
-      const x0 = j.x - 8.6, x1 = j.x + 8.6, z0 = -8.6, z1 = 8.6;
+      const x0 = j.x - 9, x1 = j.x + 9, z0 = -9, z1 = 9;
       for (let i = 1; i < path.pts.length; i++) {
         const [ax, az] = path.pts[i - 1], [bx, bz] = path.pts[i];
         if (ax > x0 && ax < x1 && az > z0 && az < z1) continue;
@@ -246,7 +249,7 @@
   function crosses(a, b) {
     for (let i = 0; i < a.length; i += 2) for (let k = 0; k < b.length; k += 2) {
       const dx = a[i] - b[k], dz = a[i + 1] - b[k + 1];
-      if (dx * dx + dz * dz < 3.6 * 3.6) return true;
+      if (dx * dx + dz * dz < 3.0 * 3.0) return true;
     }
     return false;
   }
@@ -301,7 +304,8 @@
   /* ================= vehicle driving ================= */
   TR.drive = function* (v, pts, o = {}) {
     const a = v.actor;
-    const path = WT.buildPath(pts, o.radius === undefined ? 5 : o.radius);
+    // rigs take wider, smoother corners than cars
+    const path = WT.buildPath(pts, o.radius === undefined ? (v.kind === 'truck' ? TR.TRUCK_R : 5) : o.radius);
     v.path = path; v.s = 0; v.driving = true;
     const stops = stopsFor(path);
     const vmax = o.speed || 16, acc = o.accel || 4.5, latA = o.latAccel || 4;
@@ -313,6 +317,7 @@
       const rem = path.len - v.s;
       let target = vmax, boxWait = null;
       v.why = null;
+      v.stopAt = undefined;
       const k = path.maxK(v.s, v.s + 8);
       if (k > 1e-3) target = Math.min(target, Math.max(2.2, Math.sqrt(latA / k)));
       target = Math.min(target, Math.sqrt(2 * DEC * rem) + 0.5);
@@ -344,7 +349,7 @@
           const o = roomOn(v, st.exit, Math.min(path.len, st.exit + v.front + (v.rear || 2) + 2.5));
           if (o) { stop = true; boxWait = o; v.why = 'Exit blocked'; }
         }
-        if (stop) target = Math.min(target, Math.sqrt(2 * DEC * Math.max(0, d)));
+        if (stop) { target = Math.min(target, Math.sqrt(2 * DEC * Math.max(0, d))); v.stopAt = st.s - v.front; }
         else if (d < 2.5) { st.inside = true; st.j.occ.set(v, st); }
         break;
       }
@@ -378,6 +383,19 @@
       yield;
     }
     for (const st of stops) if (st.inside && !st.done) { st.j.occ.delete(v); st.done = true; }
+    // a parked rig settles square: the trailer finishes pulling in line behind the cab before the truck stops
+    if (v.art && v.art.h !== null) {
+      a.speed = 0;
+      while (Math.abs(WT.angDiff(a.h, v.art.h)) > 0.004) {
+        const dt = WT.sim.dt;
+        if (dt > 0) {
+          v.art.h += WT.clamp(WT.angDiff(v.art.h, a.h), -dt * 0.9, dt * 0.9);
+          v.art.pivot.rotation.y = -WT.angDiff(a.h, v.art.h);
+        }
+        yield;
+      }
+      v.art.h = a.h; v.art.pivot.rotation.y = 0;
+    }
     const p = path.at(path.len);
     a.setPose(p.x, p.z, o.reverse ? p.a + Math.PI : p.a, null, 1);
     a.speed = 0;
@@ -386,7 +404,7 @@
   };
 
   /* ================= vehicles ================= */
-  const CIRC = { truck: { circ: [-5.2, -0.6, 4.3], r: 1.9, front: 7.2, rear: 7.8 }, car: { circ: [-1.2, 1.2], r: 1.3, front: 2.4, rear: 2.4 }, bus: { circ: [-4, 0, 4], r: 1.6, front: 5.9, rear: 5.9 } };
+  const CIRC = { truck: { circ: [-6.0, -3.0, 0, 2.8, 5.4], r: 1.5, half: 1.35, front: 7.2, rear: 7.8 }, car: { circ: [-1.2, 1.2], r: 1.1, half: 1.0, front: 2.4, rear: 2.4 }, bus: { circ: [-4, 0, 4], r: 1.4, half: 1.3, front: 5.9, rear: 5.9 } };
   class Truck extends WT.Entity {
     constructor(o) {
       super();
@@ -420,7 +438,7 @@
       if (this.trailer === 'logs') this.setBedLoad('timber', 1);
       else if (this.trailer === 'coil') this.setBedLoad('steel', 1);
       Object.assign(this, CIRC[cls]);
-      this.half = this.mesh.userData.half || 1.7;
+      this.half = CIRC[cls].half;
       this.bodies = []; this.pred = []; this.ghost = new Map(); this.waitT = 0;
       this.ulds = [];
       this.actor = new WT.Actor('truck', this.mesh, 'road');
@@ -481,7 +499,7 @@
     let sp, pos;
     if (t.spawnX !== undefined) {
       const tx = t.legs.length ? t.legs[0].fac.gateIn.A : 0, dir = Math.sign(tx - t.spawnX) || 1;
-      sp = [t.spawnX, dir * W.HW_LANE];
+      sp = [t.spawnX, W.hwLaneZ(dir, false)];
       pos = { hw: t.spawnX };
       a.place(sp[0], sp[1], dir > 0 ? 0 : Math.PI);
     } else {
@@ -549,7 +567,7 @@
         pre = [[a.x, a.z]];
         t.status = 'Queued at gate';
         t.driving = true; t.holding = true; t.blocker = null; t.why = 'Waiting for a bay';
-        yield* WT.waitFor(() => (leg.dock = leg.fac.reserve(leg.op)));
+        yield* WT.waitFor(() => (leg.dock = leg.fac.reserveFor ? leg.fac.reserveFor(t, leg) : leg.fac.reserve(leg.op)));
         t.driving = false; t.holding = false; t.why = null;
         leg.fac.lazyN = Math.max(0, (leg.fac.lazyN || 0) - 1);
       } else if (!leg.dock) { leg.dock = leg.fac.reserve(leg.op); if (!leg.dock) { t.curLeg = null; continue; } }
@@ -562,7 +580,9 @@
         t.driving = true;
         yield* WT.sleep(1.6);
         t.driving = false;
-        yield* TR.drive(t, [[a.x, a.z], ...ip.slice(gk + 1)], opts);
+        leg.passedGate = true; // the crane may start on this truck's box now
+        t.status = 'To spot ' + (leg.dock.n || '');
+        yield* TR.drive(t, [[a.x, a.z], ...ip.slice(gk + 1)], Object.assign({}, opts, leg.fac.laneTail ? { tail: leg.fac.laneTail() } : {}));
       } else {
         if (willReverse) {
           // one continuous drive (no heading snap at a waypoint); over the last stretch slow down and

@@ -18,6 +18,9 @@
     get gateOut() { return { A: this.plot.A, z: this.toWorld(0, -46)[1] }; }
     inPath() { return [[0, 46], [47, 46], [47, 0]].map(([x, z]) => this.toWorld(x, z)); }
     outPath() { return [[47, 0], [47, -46], [0, -46]].map(([x, z]) => this.toWorld(x, z)); }
+    // appointment trucks wait for the RTG lane on the entry road inside the gate, not out on the avenue
+    stagePath() { return [[0, 46], [30, 46]].map(([x, z]) => this.toWorld(x, z)); }
+    get stageSkip() { return 1; }
     count() { return this.slots.reduce((n, s) => n + s.items.length, 0); }
     room() { return this.slots.length * MAXH - this.count(); }
     build() {

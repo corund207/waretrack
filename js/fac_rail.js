@@ -2,49 +2,7 @@
 (function () {
   const T = THREE, M = WT.M, W = WT.W;
 
-  /* ================= crane helpers (shared with the port) ================= */
-  const CR = (WT.CraneOps = {});
-  CR.setC = (c, tx, hy) => { c.tx = tx; c.hy = hy; c.set(tx, hy); };
-  CR.hoist = function* (c, hy, v = 6) {
-    const h0 = c.hy, dur = Math.abs(hy - h0) / v;
-    if (dur > 0.01) yield* WT.tween(dur, (t) => CR.setC(c, c.tx, WT.lerp(h0, hy, WT.ease(t))));
-  };
-  CR.travel = function* (c, gx, tx, v = 6) {
-    const g0 = c.group.position.x, t0 = c.tx;
-    const dur = Math.max(Math.abs(gx - g0) / v, Math.abs(tx - t0) / (v * 1.3), 0.2);
-    yield* WT.tween(dur, (t) => {
-      const e = WT.ease(t);
-      c.group.position.x = WT.lerp(g0, gx, e);
-      CR.setC(c, WT.lerp(t0, tx, e), c.hy);
-    });
-  };
-  CR.grab = (c, mesh) => {
-    c.spreader.add(mesh);
-    mesh.position.set(0, -2.95, 0);
-    mesh.rotation.set(0, c.carryRot, 0);
-    mesh.scale.set(1, 1, 1);
-    c.carry = mesh;
-  };
-  CR.release = (c) => {
-    const m = c.carry;
-    WT.scene.attach(m);
-    c.carry = null;
-    return m;
-  };
-  // from/to: {x (world gantry pos), t (trolley coord), top|base}
-  CR.move = function* (c, mesh, from, to, safe, v = 6) {
-    yield* CR.hoist(c, safe, v);
-    yield* CR.travel(c, from.x, from.t, v);
-    yield* CR.hoist(c, from.top + 0.25, v);
-    CR.grab(c, mesh);
-    yield* WT.sleep(0.3);
-    yield* CR.hoist(c, safe, v);
-    yield* CR.travel(c, to.x, to.t, v);
-    yield* CR.hoist(c, to.base + 2.95, v);
-    const m = CR.release(c);
-    yield* WT.sleep(0.2);
-    return m;
-  };
+  const CR = WT.CraneOps; // crane motion lives in terminal.js
 
   /* ================= trains ================= */
   WT.trains = [];
@@ -166,20 +124,18 @@
   /* ================= rail terminal ================= */
   // gantry claim half-width (sill 12 m long + margin) and parking spots: the truck lanes cross the rails at A ± 82
   const CPAD = 7, CHOME = 73.5;
-  class RailTerminal extends WT.Facility {
+  // inside the gantry span: a service lane with four truck spots, and a bypass lane beside it toward the stack
+  const SRV = -603.2, BYP = -607.9;
+  class RailTerminal extends WT.CraneTerminal {
     constructor(A) {
       super('Rail terminal', 'RAIL', 'Intermodal Yard', null);
       this.A = A;
       this.name = 'Intermodal Yard';
       this.cz = -620;
-      // two truck spots on the crane lane, one under each gantry's half of the stack; trucks run west → east,
-      // so the far (east) spot is filled first and the near one never blocks a truck heading past it
-      this.docks = [{ n: 1, x: A + 30, z: -604, truck: null, ops: ['pick', 'drop'] }, { n: 2, x: A - 30, z: -604, truck: null, ops: ['pick', 'drop'] }];
-      this.jobs = [];
+      this.craneTag = 'RMG';
+      this.initYard({ srv: SRV, byp: BYP, merge: 22, spots: [A - 36, A + 5, A + 46] });
       this.income = 22000;
       this.busy = null;
-      this.pendingPick = 0;
-      this.pendingDrop = 0;
       this.site = null;
       this.slots = [];
       for (const z of [-624, -613]) for (let x = A - 63; x <= A + 63.1; x += 12.6) this.slots.push({ x, z, items: [] });
@@ -191,27 +147,26 @@
     get gateIn() { return { A: this.A, z: -573 }; }
     get gateIdx() { return 0; }
     get gateOut() { return { A: this.A, z: -588 }; }
-    inPath(d) { const A = this.A; return [[A + 3, -587], [A + 3, -592], [A - 82, -592], [A - 82, -604], [(d || this.docks[0]).x, -604]]; }
-    outPath(d) { const A = this.A; return [[(d || this.docks[0]).x, -604], [A + 82, -604], [A + 82, -588], [A + 10, -588]]; }
-    // east spot only while nobody is on (or heading for) the west spot, since that truck would have to pass it
-    reserve(op) {
-      const [east, west] = this.docks;
-      const d = !east.truck && !west.truck ? east : !west.truck ? west : null;
-      if (d) d.truck = 'reserved';
-      return d;
-    }
-    stackCount() { return this.slots.reduce((n, s) => n + s.items.length, 0); }
-    stackRoom() { return this.slots.length * 2 - this.stackCount(); }
+    laneIn() { const A = this.A; return [[A + 3, -587], [A + 3, -592], [A - 82, -592], [A - 82, BYP]]; }
+    laneOut() { const A = this.A; return [[A + 82, BYP], [A + 82, -588], [A + 10, -588]]; }
+    ct(z) { return this.cz - z; }
 
     build() {
       const A = this.A, g = this.group, S = this.structure;
       W.flat(g, 330, 54, W.COL.concrete, A, -612, 0.027);
       W.flat(g, 300, 10, W.COL.ballast, A, -636, 0.03);
-      W.flat(g, 170, 6, W.COL.road, A, -604, 0.032);
+      W.flat(g, 170, 11, W.COL.road, A, (SRV + BYP) / 2, 0.032);
       W.flat(g, 88, 6, W.COL.road, A - 40, -592, 0.032);
-      W.flat(g, 6, 16, W.COL.road, A - 82, -598, 0.032);
-      W.flat(g, 6, 20, W.COL.road, A + 82, -596, 0.032);
+      W.flat(g, 6, 22, W.COL.road, A - 82, -600, 0.032);
+      W.flat(g, 6, 26, W.COL.road, A + 82, -598, 0.032);
       W.flat(g, 76, 6, W.COL.road, A + 46, -588, 0.032);
+      // lane markings: dashed divider between service and bypass lanes, numbered spot boxes
+      const lm = [], spotM = [];
+      W.dashLine(lm, A - 80, (SRV + BYP) / 2, A + 80, (SRV + BYP) / 2, 3, 2.4, 0.22);
+      for (const d of this.docks) W.dashRect(spotM, d.x - 1, SRV, 17, 4.2, 1, 0.5, 0.22);
+      W.dashes(g, lm, 0xffffff, 0.06);
+      W.dashes(g, spotM, W.COL.yellow, 0.061);
+      for (const d of this.docks) W.groundText(g, 'T' + d.n, d.x + 9.5, SRV, 2.6, 1.6, '#e0b75a', 0, 40);
       const b = new M.MB();
       for (const o of [-0.75, 0.75]) b.box(220, 0.25, 0.22, 0x6a7194, A, 0.05, -636 + o);
       for (const sx of [-1, 1]) {
@@ -239,18 +194,14 @@
       pb.box(2.6, 0.3, 2.6, 0x2f56e0, gx + 6.4, 2.6, gz);
       S.add(pb.mesh());
       // two rail-mounted gantries on the same rails, parked at either end of the stack
-      this.cranes = [-1, 1].map((side, i) => {
+      const cranes = [0, 1].map(() => {
         const c = M.gantry(44, 17);
         c.group.rotation.y = Math.PI / 2;
-        c.id = 'RMG-' + (i + 1); c.side = side; c.home = A + side * CHOME; c.task = 'Idle'; c.lifts = 0;
-        c.group.position.set(c.home, 0, this.cz);
-        c.lo = c.home - CPAD; c.hi = c.home + CPAD; c.want = null; c.prio = 0; c.waited = 0;
+        c.group.position.set(A, 0, this.cz);
         S.add(c.group);
         return c;
       });
-      this.cranes[0].other = this.cranes[1];
-      this.cranes[1].other = this.cranes[0];
-      this.crane = this.cranes[0];
+      this.setupCranes(cranes, [A - CHOME, A + CHOME], CPAD, 12.5, 6.5);
       this.site = { x: A, z: -620, w: 60, d: 48, h: 18, world: true };
     }
     activate() {
@@ -258,137 +209,22 @@
       for (let i = 0; i < 3; i++) {
         const s = WT.pick(this.slots.filter((q) => q.items.length < 2));
         const c = WT.SUP.newContainer(11);
-        WT.SUP.note(c, 'Empty staged for export');
+        WT.SUP.note(c, 'Empty off an earlier train');
         c.mesh.position.set(s.x, s.items.length * 2.7, s.z);
         c.loc = this.id + ' · Stack';
+        c.status = 'Empty · stacked';
         WT.scene.add(c.mesh);
         s.items.push(c);
       }
-      this.cranes.forEach((c) => WT.spawn(this.craneWorker(c)));
+      this.startCranes();
     }
-    ct(z) { return this.cz - z; }
-    /* ----- two rail-mounted gantries sharing one pair of rails -----
-       Each crane holds a claim on a stretch of rail [lo, hi] that always contains its own position; claims never
-       overlap, so the cranes can't collide or pass each other. Before a lift a crane claims the whole stretch it
-       will travel; if the other crane is in the way it backs off toward its own end and tries again. */
-    reach(c, x) { return c.side < 0 ? x <= c.other.home - 2 * CPAD : x >= c.other.home + 2 * CPAD; }
-    shrink(c) { const x = c.group.position.x; c.lo = x - CPAD; c.hi = x + CPAD; }
-    // move just far enough toward our own end to clear the stretch the other crane is asking for
-    *makeWay(c, want) {
-      const x = c.group.position.x;
-      const target = c.side < 0 ? Math.max(c.home, Math.min(x, want[0] - CPAD - 0.5)) : Math.min(c.home, Math.max(x, want[1] + CPAD + 0.5));
-      if (Math.abs(target - x) < 0.3) { yield* WT.sleep(0.2); return; }
-      c.lo = Math.min(x, target) - CPAD; c.hi = Math.max(x, target) + CPAD;
-      c.task = 'Making way for ' + c.other.id;
-      yield* CR.hoist(c, 12.5);
-      yield* CR.travel(c, target, c.tx);
-      this.shrink(c);
-    }
-    *acquire(c, xs, prio) {
-      while (true) {
-        const x = c.group.position.x, lo = Math.min(x, ...xs) - CPAD, hi = Math.max(x, ...xs) + CPAD, o = c.other;
-        if (hi <= o.lo || lo >= o.hi) { c.lo = lo; c.hi = hi; c.want = null; c.waited = 0; return; }
-        if (!c.want) c.waited = 0;
-        c.want = [lo, hi]; c.prio = prio;
-        c.task = 'Waiting for ' + o.id;
-        // both waiting on each other: the one serving a truck goes first (ties: the west crane), the other steps aside
-        const mutual = o.want && o.want[1] > c.lo && o.want[0] < c.hi;
-        if (mutual && (o.prio > prio || (o.prio === prio && c.side > 0))) yield* this.makeWay(c, o.want);
-        else { yield* WT.sleep(0.1); c.waited += 0.1; }
-      }
-    }
-    // a job's plan(crane) returns a lift {mesh, from, to, slot, lock, commit}, null (not for this crane / not yet)
-    // or 'skip' (nothing left to lift)
-    addJob(j) { j.done = false; this.jobs.push(j); return j; }
-    *waitJobs(list) { while (list.some((j) => !j.done)) yield; }
-    *craneWorker(c) {
-      while (true) {
-        // the other crane has been waiting on the rail we hold: step aside before taking more work
-        const oc = c.other;
-        if (oc.want && oc.waited > 2 && oc.want[1] > c.lo && oc.want[0] < c.hi) { yield* this.makeWay(c, oc.want); continue; }
-        // nearest job to this crane first, trucks ahead of the train so the lane keeps moving
-        let job = null, lift = null, best = Infinity;
-        const x = c.group.position.x;
-        for (const j of this.jobs) {
-          const p = j.plan(c);
-          if (p === 'skip') { j.done = true; continue; }
-          if (!p) continue;
-          const score = Math.abs(p.from.x - x) + Math.abs(p.to.x - p.from.x) * 0.5 - (j.truck ? 40 : 0);
-          if (score < best) { best = score; job = j; lift = p; }
-        }
-        this.jobs = this.jobs.filter((j) => !j.done && j !== job);
-        if (!job) {
-          // idle: stay put unless the other crane needs the rail we're standing on
-          const o = c.other;
-          if (o.want && o.want[1] > c.lo && o.want[0] < c.hi) yield* this.makeWay(c, o.want);
-          else { c.task = 'Idle'; yield* WT.sleep(0.2); }
-          continue;
-        }
-        if (lift.slot) lift.slot.busy = c;
-        if (lift.lock) lift.lock.lifting = true;
-        yield* this.acquire(c, [lift.from.x, lift.to.x], job.truck ? 1 : 0);
-        c.task = job.label;
-        const m = yield* CR.move(c, lift.mesh, lift.from, lift.to, 12.5);
-        lift.commit(m);
-        if (lift.slot) lift.slot.busy = null;
-        if (lift.lock) lift.lock.lifting = false;
-        this.shrink(c);
-        c.task = 'Idle';
-        c.lifts++;
-        job.done = true;
-        this.moves++;
-        WT.G && WT.G.earn(6000, this);
-      }
-    }
-    *queue(run) { yield* run(); } // (kept for compatibility)
-    // ----- container yard helpers (imports = material boxes, exports = sealed product boxes + empties) -----
-    topOf(s) { return s.items[s.items.length - 1]; }
-    isImport(c) { return c && c.contents && c.contents.kind === 'mat'; }
-    findImport(m) {
-      for (const s of this.slots) { const c = this.topOf(s); if (c && !c.reserved && this.isImport(c) && c.contents.mat === m) return c; }
-      return null;
-    }
-    exportCount() { return this.slots.reduce((n, s) => n + s.items.filter((c) => !this.isImport(c)).length, 0); }
-    importCount() { return this.slots.reduce((n, s) => n + s.items.filter((c) => this.isImport(c)).length, 0); }
-    pickSlot(filter) {
-      const c = this.slots.filter((s) => s.items.length && (filter ? filter(this.topOf(s)) : !this.topOf(s).reserved));
-      return c.length ? c.reduce((a, b) => (b.items.length > a.items.length ? b : a)) : null;
-    }
-    dropSlot() {
-      const c = this.slots.filter((s) => s.items.length < 2 && !(s.items.length && this.topOf(s).reserved));
-      return c.length ? c.reduce((a, b) => (b.items.length < a.items.length ? b : a)) : null;
-    }
-    // lift a box from (wx, wz, top) into the stack: lowest free slot this crane can reach, near the source,
-    // away from the other crane
-    stackLift(c, mesh, wx, wz, top, commit) {
-      if (!this.reach(c, wx)) return null;
-      const o = c.other;
-      const cands = this.slots.filter((s) => !s.busy && s.items.length < 2 && !(s.items.length && this.topOf(s).reserved) && this.reach(c, s.x));
-      if (!cands.length) return null;
-      const score = (s) => s.items.length * 40 + Math.abs(s.x - wx) + (s.x > o.lo - CPAD && s.x < o.hi + CPAD ? 60 : 0);
-      const s = cands.reduce((a, b) => (score(b) < score(a) ? b : a));
-      return {
-        slot: s, mesh, from: { x: wx, t: this.ct(wz), top }, to: { x: s.x, t: this.ct(s.z), base: s.items.length * 2.7 },
-        commit: (m) => {
-          m.position.set(s.x, s.items.length * 2.7, s.z);
-          m.rotation.set(0, 0, 0);
-          s.items.push(commit());
-        },
-      };
-    }
-    // lift the top box of a matching stack onto (wx, wz) at deck height `base`
-    unstackLift(c, filter, wx, wz, base, commit) {
-      const any = this.slots.some((s) => s.items.length && filter(this.topOf(s)));
-      if (!any) return 'skip';
-      if (!this.reach(c, wx)) return null;
-      const cands = this.slots.filter((s) => s.items.length && !s.busy && filter(this.topOf(s)) && !this.topOf(s).lifting && this.reach(c, s.x));
-      if (!cands.length) return null;
-      const s = cands.reduce((a, b) => (b.items.length > a.items.length ? b : a));
-      const cont = this.topOf(s);
-      return {
-        slot: s, lock: cont, mesh: cont.mesh, from: { x: s.x, t: this.ct(s.z), top: s.items.length * 2.7 }, to: { x: wx, t: this.ct(wz), base },
-        commit: (m) => { s.items.pop(); commit(cont, m); },
-      };
+    // a booked box still on the train at the siding: the crane can lift it straight onto a waiting truck
+    aboard(c) {
+      const car = c.wagon;
+      if (!car || car.cont !== c || !this.busy || !this.busy.id) return null;
+      const p = new T.Vector3();
+      c.mesh.getWorldPosition(p);
+      return { x: p.x, z: p.z, top: p.y + 2.7, take: () => { car.cont = null; } };
     }
     *trainCall(tr) {
       this.busy = tr;
@@ -397,41 +233,60 @@
       WT.emit('event', { kind: 'train', ent: tr, weight: 3 });
       const sh = WT.createShipment({ mode: 'rail', to: WT.pick(WT.RAIL_DEST), carrier: tr.operator, vehicle: tr, total: 3, transit: WT.rint(240, 600) });
       tr.shipment = sh;
-      // both cranes discharge the train at once, each taking the wagons on its side first
+      // pre-advice: the moment the train is in, every booked box is released to drayage, so trucks are already
+      // rolling while the cranes work; a truck that beats the discharge gets its box straight off the wagon
+      for (const car of tr.cars.slice(1)) {
+        const c = car.cont;
+        if (c && c.po) { c.wagon = car; c.at = this; c.status = 'On train at ' + this.id; WT.SUP.grounded(c.po, this.id); }
+      }
       const p = new T.Vector3();
-      const discharge = tr.cars.slice(1).filter((car) => car.cont).map((car) => this.addJob({
-        label: 'Discharging ' + tr.id,
-        plan: (c) => {
-          if (!car.cont) return 'skip';
-          car.cont.mesh.getWorldPosition(p);
-          const cont = car.cont;
-          return this.stackLift(c, cont.mesh, p.x, p.z, p.y + 2.7, () => {
-            car.cont = null;
-            cont.status = 'Stored'; cont.loc = this.id + ' · Stack';
-            WT.SUP.note(cont, `Discharged at ${this.id} from ${tr.id}`);
-            if (cont.po) { cont.at = this; cont.status = 'Grounded · awaiting truck'; WT.SUP.grounded(cont.po, this.id); }
-            return cont;
-          });
-        },
-      }));
+      const discharge = tr.cars.slice(1).filter((car) => car.cont).map((car) => {
+        const cont = car.cont;
+        return this.addJob({
+          label: 'Discharging ' + tr.id,
+          where: () => car.g.position.x,
+          plan: (c) => {
+            if (car.cont !== cont) return 'skip'; // already went straight onto a truck
+            if (cont.lifting) return null;
+            cont.mesh.getWorldPosition(p);
+            const r = this.stackLift(c, cont.mesh, p.x, p.z, p.y + 2.7, () => {
+              car.cont = null; cont.wagon = null;
+              cont.status = cont.po ? 'Grounded · awaiting truck' : 'Stored';
+              cont.loc = this.id + ' · Stack';
+              WT.SUP.note(cont, `Discharged at ${this.id} from ${tr.id}`);
+              return cont;
+            });
+            if (r) r.lock = cont;
+            return r;
+          },
+        });
+      });
       yield* this.waitJobs(discharge);
       tr.status = 'Loading';
       WT.advanceShipment(sh, 2);
+      // only sealed export boxes go out by rail — empties are trucked to the depot instead
       let loaded = 0;
-      const empties = tr.cars.slice(1).filter((car) => !car.cont).slice(0, 4);
-      const load = (this.exportCount() ? empties : []).map((car) => this.addJob({
+      // each crane loads the nearest open wagon on its side from export boxes on its side
+      const empties = tr.cars.slice(1).filter((car) => !car.cont);
+      const n = Math.min(4, empties.length, this.exportCount());
+      const load = Array.from({ length: n }, () => this.addJob({
         label: 'Loading ' + tr.id,
         plan: (c) => {
-          const full = this.slots.some((s) => s.items.length && !this.isImport(this.topOf(s)) && this.topOf(s).full && !this.topOf(s).reserved);
-          const filt = full ? (x) => !this.isImport(x) && x.full && !x.reserved : (x) => !this.isImport(x) && !x.reserved;
+          const open = empties.filter((k) => !k.cont && !k.claimed);
+          if (!open.length) return 'skip';
+          let car = null, bd = Infinity;
+          for (const k of open) { const kx = k.g.position.x; if (this.allowed(c, kx) && Math.abs(kx - c.group.position.x) < bd) { bd = Math.abs(kx - c.group.position.x); car = k; } }
+          if (!car) return null;
           car.g.getWorldPosition(p);
-          return this.unstackLift(c, filt, p.x, p.z, 1.45, (cont, m) => {
+          const r = this.unstackLift(c, (x) => this.isFullExport(x) && !x.reserved, p.x, p.z, 1.45, (cont, m) => {
             car.g.userData.slot.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
             car.cont = cont; cont.status = 'On rail'; cont.loc = tr.id;
             loaded++; sh.loaded = loaded;
             WT.SUP.note(cont, `Loaded on ${tr.id} → ${sh.to}`);
             WT.updateShipment(sh, Math.round(WT.secToMin((3 - loaded) * 12)));
           });
+          if (r && r !== 'skip') { r.onTake = () => { car.claimed = true; }; }
+          return r;
         },
       }));
       yield* this.waitJobs(load);
@@ -440,59 +295,11 @@
       this.busy = null;
       yield* WT.sleep(1);
     }
-    *serve(t, leg) {
-      yield* this.serveLift(t, leg);
-      if (leg.dock === this.docks[1]) {
-        t.status = 'Waiting for lane';
-        yield* WT.waitFor(() => !this.docks[0].truck);
-      }
-    }
-    *serveLift(t, leg) {
-      t.where = this.id + ' · Crane lane · spot ' + leg.dock.n;
-      const spot = { x: leg.dock.x, z: leg.dock.z };
-      if (leg.op === 'pick') {
-        t.status = 'Awaiting container';
-        let waited = 0;
-        const want = leg.cont;
-        const filt = want ? (c) => c === want : (c) => this.isImport(c) && !c.reserved;
-        while (!this.pickSlot(filt) && waited < 40) { waited += WT.sim.dt; yield; }
-        this.pendingPick = Math.max(0, this.pendingPick - 1);
-        const cargo = t.mesh.userData.cargo;
-        yield* this.waitJobs([this.addJob({
-          truck: t, label: 'Loading ' + t.id,
-          plan: (c) => this.unstackLift(c, filt, spot.x, spot.z, 1.35, (cont, m) => {
-            cargo.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
-            cont.reserved = false; cont.at = null; t.container = cont; cont.status = 'On truck'; cont.loc = t.id;
-            WT.SUP.note(cont, `Picked up by ${t.id} at ${this.id}`);
-          }),
-        })]);
-        if (!t.container && t.cargo) t.cargo = null;
-      } else {
-        t.status = 'Dropping container';
-        this.pendingDrop = Math.max(0, this.pendingDrop - 1);
-        while (this.stackRoom() < 1) yield;
-        const c = t.container, p = new T.Vector3();
-        if (c) yield* this.waitJobs([this.addJob({
-          truck: t, label: 'Unloading ' + t.id,
-          plan: (cr) => {
-            if (t.container !== c) return 'skip';
-            c.mesh.getWorldPosition(p);
-            return this.stackLift(cr, c.mesh, p.x, p.z, p.y + 2.7, () => {
-              t.container = null;
-              c.status = 'Stored'; c.loc = this.id + ' · Stack';
-              WT.SUP.note(c, `Dropped at ${this.id} for export`);
-              return c;
-            });
-          },
-        })]);
-      }
-    }
     card() {
-      const cr = this.cranes.map((c) => `${c.id}: ${c.carry ? 'Lifting' : c.task}`).join(' · ');
       return this.cardBase({
         kicker: 'Facility · Rail terminal', icon: '🚉', sub: 'Siding + 2 RMG gantries · Avenue ' + this.A, where: this.busy && this.busy.id ? this.busy.id + ' on siding' : this.busy ? 'Train inbound' : 'Siding free',
-        rows: [['Imports waiting', String(this.importCount())], ['Exports staged', String(this.exportCount())], ['Containers stacked', this.stackCount() + ' / ' + this.slots.length * 2], ['Crane lifts', `${WT.fmtNum(this.moves)} (${this.cranes.map((c) => c.lifts).join(' + ')})`], ['Cranes', cr],
-          ['Queued jobs', String(this.jobs.length)], ['Trains', this.busy ? '1 at siding' : 'None'], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
+        rows: [['Imports waiting', String(this.importCount())], ['Exports staged', String(this.exportCount())], ['Empties', String(this.emptyCount()) + ' → depot'], ['Containers stacked', this.stackCount() + ' / ' + this.slots.length * 2],
+          ...this.craneRows(), ['Trains', this.busy ? '1 at siding' : 'None'], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
       });
     }
   }

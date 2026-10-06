@@ -11,10 +11,10 @@
   };
 
   /* ---------- catalogue ---------- */
-  const COST = { Warehouse: 380e3, Factory: 520e3, 'Rail line': 900e3, 'Rail terminal': 750e3, 'Power plant': 600e3, 'Port terminal': 1.1e6,
+  const COST = { Warehouse: 380e3, Factory: 390e3, 'Rail line': 900e3, 'Rail terminal': 750e3, 'Power plant': 600e3, 'Port terminal': 1.1e6,
     Airfield: 1.4e6, 'Air terminal': 1.0e6, Stand: 500e3, Tower: 300e3, Headquarters: 900e3, 'Solar farm': 300e3, 'Tank farm': 450e3, Parking: 200e3,
     'Container depot': 650e3, 'Truck stop': 350e3, Substation: 280e3, 'Water tower': 220e3,
-    'Steel Mill': 800e3, 'Copper Refinery': 700e3, 'Chemical Plant': 750e3, Sawmill: 450e3, 'Glass Works': 600e3 };
+    'Steel Mill': 600e3, 'Copper Refinery': 520e3, 'Chemical Plant': 560e3, Sawmill: 340e3, 'Glass Works': 450e3 };
   const DUR = { Warehouse: 26, Factory: 32, 'Rail line': 30, 'Rail terminal': 28, 'Power plant': 34, 'Port terminal': 34, Airfield: 26,
     'Air terminal': 30, Stand: 14, Tower: 18, Headquarters: 40, 'Solar farm': 16, 'Tank farm': 22, Parking: 12,
     'Container depot': 24, 'Truck stop': 18, Substation: 16, 'Water tower': 20,
@@ -77,7 +77,7 @@
     if (G.scriptIdx < script.length) { queue.push(script[G.scriptIdx++]()); return queue[0]; }
     // procedural growth
     const stands = count('Stand'), plotFacs = WT.facilities.filter((f) => f.plot).length;
-    if (stands < 4 && plotFacs >= 6 + stands * 4) { queue.push(project('Stand', () => new WT.Stand(stands + 1))); return queue[0]; }
+    if (stands < WT.AIR.standXs.length && plotFacs >= 6 + stands * 4) { queue.push(project('Stand', () => new WT.Stand(stands + 1))); return queue[0]; }
     if (W.railBuilt) for (const A of W.AVENUES) {
       if (usedOn(A) >= 3 && !has('Rail terminal', (f) => f.A === A) && !(A === 600)) { queue.push(project('Rail terminal', () => new WT.RailTerminal(A))); return queue[0]; }
     }
@@ -89,13 +89,13 @@
       const out = WT.SUP.PLANTS[name].out;
       const consumers = WT.facilities.filter((f) => f.type === 'Factory' && !f.intermediate && f.recipe.in.includes(out)).length;
       const producers = WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === name).length;
-      if (consumers && consumers > producers * 3) {
+      if (consumers && consumers > producers * 2) {
         const p = freePlot();
         if (p) { p.used = 'planned'; queue.push(project(name, () => new WT.Factory(p, null, name), { plot: p })); return queue[0]; }
       }
     }
     G.fillTick = (G.fillTick || 0) + 1;
-    if (G.fillTick % 4 === 0) {
+    if (G.fillTick % 6 === 0) {
       const p = freePlot();
       if (p) {
         const pw = count('Power plant'), fac = count('Factory');
@@ -117,6 +117,16 @@
       const lines = WT.SUP.ASSEMBLY.slice().sort((x, y) => count2(x) - count2(y) + (Math.random() - 0.5));
       const line = lines[0];
       queue.push(project('Factory', () => new WT.Factory(pair[1], wh, line), { label: line + ' Plant' }));
+      // industrial cluster: every other new assembly line also brings a supplier plant for its scarcest input
+      if (Math.random() < 0.5) {
+        const need = WT.SUP.INTERMEDIATE.map((name) => {
+          const out = WT.SUP.PLANTS[name].out;
+          const users = WT.facilities.filter((f) => f.type === 'Factory' && !f.intermediate && f.recipe.in.includes(out)).length + (WT.SUP.PLANTS[line].in.includes(out) ? 1 : 0);
+          return { name, gap: users - count2(name) * 2 };
+        }).sort((a, b) => b.gap - a.gap)[0];
+        const p = need && need.gap > 0 && freePlot();
+        if (p) { p.used = 'planned'; queue.push(project(need.name, () => new WT.Factory(p, null, need.name), { plot: p })); }
+      }
       return queue[0];
     }
     const p = freePlot();
