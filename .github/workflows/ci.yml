@@ -1,0 +1,80 @@
+name: CI / Deploy
+
+# Every push is checked; only a green build reaches Vercel.
+# main → production, any other branch → a preview deployment.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install headless Chrome
+        run: npx puppeteer browsers install chrome
+      - name: Static checks (syntax, assets, version tags)
+        run: npm run test:static
+      - name: Build (stamp commit hash)
+        run: npm run build
+      - name: Simulation test (growth, supply chain, traffic, path audit)
+        run: npm run test:sim
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Vercel
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      TARGET: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check Vercel credentials
+        id: creds
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::warning::Vercel secrets are not configured, skipping deploy."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Pull Vercel project settings
+        if: steps.creds.outputs.ok == 'true'
+        run: npx --yes vercel@latest pull --yes --environment=$TARGET --token="$VERCEL_TOKEN"
+      - name: Build
+        if: steps.creds.outputs.ok == 'true'
+        run: npx --yes vercel@latest build $([ "$TARGET" = production ] && echo --prod) --token="$VERCEL_TOKEN"
+      - name: Deploy
+        id: deploy
+        if: steps.creds.outputs.ok == 'true'
+        run: |
+          url=$(npx --yes vercel@latest deploy --prebuilt $([ "$TARGET" = production ] && echo --prod) --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed $TARGET: $url" >> "$GITHUB_STEP_SUMMARY"
