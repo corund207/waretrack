@@ -84,7 +84,7 @@ function auditPaths() {
   WT.FX.belts.forEach((b) => skip.add(b.im));
   WT.TR.gates.forEach((g) => mark(g.arm));
   for (const e of WT.entities.values()) if (['forklift', 'tug', 'pallet', 'uld'].includes(e.kind)) mark(e.mesh);
-  WT.scene.traverse((o) => { if (o.isSprite || o.isLine || o.isLineSegments) skip.add(o); });
+  WT.scene.traverse((o) => { if (o.isSprite || o.isLine || o.isLineSegments || o.userData.fx) skip.add(o); });
   const forests = new Set(WT.W.forests.map((f) => f.mesh));
   const all = [];
   WT.scene.traverse((o) => { if ((o.isMesh || o.isInstancedMesh) && !skip.has(o) && !forests.has(o)) { const b = new T.Box3().setFromObject(o); if (b.max.y > 0.35 && isFinite(b.min.x)) all.push({ o, b }); } });
@@ -110,7 +110,7 @@ function auditPaths() {
         if (treeHit(org.x, org.z)) { out.push({ label, at: [Math.round(org.x), Math.round(org.z)], hit: 'tree' }); continue; }
         ray.set(org, down);
         const h = ray.intersectObjects(targets, false).find((h) => h.point.y > 0.35 && h.point.y < 4.6);
-        if (h) out.push({ label, at: [Math.round(q.x), Math.round(q.z)], hit: owner(h.object) });
+        if (h) out.push({ label, at: [Math.round(q.x), Math.round(q.z)], hit: owner(h.object), obj: (h.object.type + ":" + (h.object.parent && h.object.parent.type) + ":" + (h.object.geometry && h.object.geometry.type)), y: +h.point.y.toFixed(1) });
       }
     }
     return out;

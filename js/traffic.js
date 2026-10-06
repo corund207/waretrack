@@ -46,7 +46,14 @@
       }
       const a = v.actor, ch = Math.cos(a.h), sh = Math.sin(a.h);
       v.bodies.length = 0;
-      for (const o of v.circ) v.bodies.push(a.x + ch * o, a.z + sh * o);
+      const ar = v.art;
+      if (ar && ar.h !== null) {
+        const kx = a.x + ch * ar.kp, kz = a.z + sh * ar.kp, th = Math.cos(ar.h), ts = Math.sin(ar.h);
+        for (const o of v.circ) {
+          if (o < ar.kp) v.bodies.push(kx + th * (o - ar.kp), kz + ts * (o - ar.kp));
+          else v.bodies.push(a.x + ch * o, a.z + sh * o);
+        }
+      } else for (const o of v.circ) v.bodies.push(a.x + ch * o, a.z + sh * o);
       v.pred.length = 0;
       if (v.driving && v.path) {
         const ve = Math.max(a.speed, 3.5);
@@ -263,6 +270,34 @@
     return null;
   }
 
+  /* ================= articulated rigs ================= */
+  // point on a path, extended straight past either end
+  function pathPoint(path, s) {
+    if (s >= 0 && s <= path.len) return path.at(s);
+    const e = path.at(s < 0 ? 0 : path.len), d = s < 0 ? s : s - path.len;
+    return { x: e.x + Math.cos(e.a) * d, z: e.z + Math.sin(e.a) * d, a: e.a };
+  }
+  // The trailer hangs off the tractor's fifth wheel. Pulling forward it trails like a real semi: its
+  // heading relaxes toward the tractor's (dθ = ds/L · sin Δ), cutting slightly inside bends; it is held
+  // within a lane-width of the path so it never sweeps a kerb or a building. Reversing, the trailer leads
+  // and is steered down the path, the tractor following it in.
+  TR.articulate = function (v, path, s, ds, reverse) {
+    const A = v.art, a = v.actor;
+    const kx = a.x + Math.cos(a.h) * A.kp, kz = a.z + Math.sin(a.h) * A.kp;
+    if (A.h === null) A.h = a.h;
+    const q = pathPoint(path, reverse ? s + (A.L - A.kp) : s + (A.kp - A.L));
+    let target = Math.atan2(kz - q.z, kx - q.x);
+    if (!reverse) {
+      const kin = A.h + (ds / A.L) * Math.sin(WT.angDiff(A.h, a.h));
+      target += WT.clamp(WT.angDiff(target, kin), -0.13, 0.13);
+    }
+    const rate = (Math.abs(ds) / A.L) * 1.8 + 0.4 * WT.sim.dt;
+    A.h += WT.clamp(WT.angDiff(A.h, target), -rate, rate);
+    const art = WT.clamp(WT.angDiff(a.h, A.h), -1.05, 1.05);
+    A.h = a.h + art;
+    A.pivot.rotation.y = -art;
+  };
+
   /* ================= vehicle driving ================= */
   TR.drive = function* (v, pts, o = {}) {
     const a = v.actor;
@@ -335,6 +370,7 @@
       v.s += a.speed * dt;
       const p = path.at(v.s);
       a.setPose(p.x, p.z, o.reverse ? p.a + Math.PI : p.a, null, dt);
+      if (v.art) TR.articulate(v, path, v.s, a.speed * dt, o.reverse);
       if (o.onTick) o.onTick(v.s, path);
       yield;
     }
@@ -347,7 +383,7 @@
   };
 
   /* ================= vehicles ================= */
-  const CIRC = { truck: { circ: [-5.2, -0.6, 3.9], r: 1.9, front: 6.8, rear: 7.8 }, car: { circ: [-1.2, 1.2], r: 1.3, front: 2.4, rear: 2.4 }, bus: { circ: [-4, 0, 4], r: 1.6, front: 5.9, rear: 5.9 } };
+  const CIRC = { truck: { circ: [-5.2, -0.6, 4.3], r: 1.9, front: 7.2, rear: 7.8 }, car: { circ: [-1.2, 1.2], r: 1.3, front: 2.4, rear: 2.4 }, bus: { circ: [-4, 0, 4], r: 1.6, front: 5.9, rear: 5.9 } };
   class Truck extends WT.Entity {
     constructor(o) {
       super();
@@ -374,6 +410,12 @@
       else this.mesh = M.rig({ cab: this.carrier.cab, stripe: this.carrier.stripe, label: this.carrier.name, trailer: this.variant === 'dump' ? 'dump' : this.trailer, style: Math.random() < 0.4 ? 'conv' : 'cabover' });
       if (!this.mesh.userData.cargo) { const c = new T.Group(); c.position.set(-2, 1.35, 0); this.mesh.add(c); this.mesh.userData.cargo = c; }
       if (o.container) this.load(o.container);
+      const ud = this.mesh.userData;
+      // semi-trailer hinge: kingpin offset, kingpin→trailer-axle length, current trailer heading
+      this.art = ud.pivot ? { pivot: ud.pivot, kp: ud.kingpin, L: ud.wheelbase, h: null } : null;
+      // open decks leave the yard loaded with what that trailer is built for
+      if (this.trailer === 'logs') this.setBedLoad('timber', 1);
+      else if (this.trailer === 'coil') this.setBedLoad('steel', 1);
       Object.assign(this, CIRC[cls]);
       this.half = this.mesh.userData.half || 1.7;
       this.bodies = []; this.pred = []; this.ghost = new Map(); this.waitT = 0;
@@ -383,6 +425,17 @@
       this.prio = this.actor.prio;
       WT.register(this);
       WT.trucks.push(this);
+    }
+    // what an open trailer (coil cradles, log stakes, stake bed) visibly carries
+    setBedLoad(mat, frac) {
+      if (!['coil', 'logs', 'stake'].includes(this.trailer) || this.kind !== 'truck' || this.variant === 'dump' || this.variant === 'mixer') return;
+      if (!this.bedLoad || this.bedLoad.mat !== mat) {
+        if (this.bedLoad) this.bedLoad.g.removeFromParent();
+        this.bedLoad = new M.Load(mat, 10.6);
+        this.bedLoad.g.position.set(-0.2, -0.1, 0);
+        this.mesh.userData.cargo.add(this.bedLoad.g);
+      }
+      this.bedLoad.set(frac);
     }
     load(c) {
       this.container = c;

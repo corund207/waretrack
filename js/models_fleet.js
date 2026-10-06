@@ -10,6 +10,7 @@
       b.cyl(r * 0.5, r * 0.5, 0.58, P.hub, wx, r, wz, 8, Math.PI / 2);
     }
   }
+  // tractor cab + front steer axle (drive axles are added by the rig under the fifth wheel)
   function cab(b, style, color) {
     if (style === 'conv') {
       b.box(2.2, 3.0, 3.0, color, 4.2, 0.9, 0);
@@ -21,7 +22,7 @@
       b.box(0.3, 0.4, 2.9, DARK, 7.5, 0.55, 0);
       for (const z of [-1.0, 1.0]) b.box(0.1, 0.3, 0.45, 0xfff1b8, 7.45, 1.7, z);
       for (const z of [-1.45, 1.45]) b.cyl(0.12, 0.12, 3.2, CHROME, 3.2, 3.6, z, 8);
-      wheels(b, [-6.0, -4.75, 6.4], 1.2, 0.6);
+      wheels(b, [6.4], 1.2, 0.6);
     } else {
       b.box(2.7, 2.9, 3.1, color, 5.0, 0.9, 0);
       b.box(1.8, 0.65, 3.0, color, 4.6, 3.8, 0);
@@ -30,83 +31,235 @@
       b.box(0.35, 0.45, 3.15, DARK, 6.45, 0.65, 0);
       for (const z of [-1.0, 1.0]) b.box(0.08, 0.3, 0.55, 0xfff1b8, 6.4, 1.3, z);
       b.box(0.5, 0.12, 2.4, shade(color, 0.8), 6.2, 1.8, 0);
-      wheels(b, [-6.0, -4.75, 4.95], 1.2, 0.6);
+      wheels(b, [4.95], 1.2, 0.6);
     }
   }
-  // Articulated rig. trailer: box | reefer | curtain | tanker | coil | logs | flat | dump
+  // Articulated rig: a tractor and a semi-trailer hinged at the fifth wheel (kingpin).
+  // trailer: box | reefer | curtain | tanker | coil | logs | stake | flat | uld | dump (dump = rigid tipper)
+  // userData.pivot is the trailer's hinge; traffic.js swings it to follow the tractor.
+  const KINGPIN = 2.4, TRAILER_AXLE = -5.4, TRACTOR_SHIFT = 0.6;
   M.rig = (o = {}) => {
     const g = new T.Group();
-    const b = new MB();
     const color = o.cab || P.blue, stripe = o.stripe || color, tr = o.trailer || 'box';
-    b.box(14.0, 0.45, 2.3, DARK, -0.6, 0.5, 0);
-    cab(b, o.style || 'cabover', color);
+    const rigid = tr === 'dump';
+    // ---- tractor (drawn in cab coordinates, then moved forward to clear the trailer's swing)
+    const t = new MB();
+    cab(t, o.style || 'cabover', color);
+    if (rigid) {
+      t.box(14.0, 0.45, 2.3, DARK, -0.6, 0.5, 0);
+      t.box(9, 0.4, 2.6, DARK, -1.6, 0.9, 0);
+      t.box(8.6, 2.4, 3.0, o.trailerColor || 0xf0b429, -1.8, 1.3, 0);
+      t.box(8.2, 0.6, 2.6, 0x9c7a5b, -1.8, 3.5, 0);
+      t.sphere(1.2, 0x9c7a5b, -1.8, 3.9, 0, 3, 0.4, 1, 10);
+      wheels(t, [-6.0, -4.75], 1.2, 0.6);
+    } else {
+      t.box(6.6, 0.45, 2.3, DARK, 3.0, 0.5, 0);
+      t.cyl(1.0, 1.0, 0.16, 0x3a4166, KINGPIN - TRACTOR_SHIFT, 1.03, 0, 14);
+      for (const z of [-1.3, 1.3]) t.box(2.7, 0.12, 0.62, shade(color, 0.7), 1.4, 1.32, z);
+      t.box(0.25, 1.6, 0.25, CHROME, 3.15, 0.95, -1.0);
+      wheels(t, [0.8, 2.0], 1.2, 0.6);
+    }
+    const tm = t.mesh();
+    if (!rigid) tm.position.x = TRACTOR_SHIFT;
+    g.add(tm);
+    const cargo = new T.Group();
+    cargo.position.set(-2.0, 1.35, 0);
+    g.userData.cargo = cargo;
+    g.userData.half = 1.7;
+    if (rigid) { g.add(cargo); return g; }
+
+    // ---- semi-trailer (rig coordinates, hung from the kingpin)
+    const b = new MB();
     let decal = false;
     const W = 3.3;
     if (tr === 'box' || tr === 'reefer' || tr === 'curtain') {
       const body = tr === 'curtain' ? shade(stripe, 1.35) : o.trailerColor || P.white;
-      b.box(11.4, 3.5, W, body, -2.0, 0.9, 0);
-      b.box(11.46, 0.12, W + 0.06, shade(body, 0.9), -2.0, 4.4, 0);
+      b.box(11.2, 3.5, W, body, -2.1, 0.9, 0);
+      b.box(11.26, 0.12, W + 0.06, shade(body, 0.9), -2.1, 4.4, 0);
       b.box(0.12, 3.3, W - 0.1, shade(body, 0.85), -7.72, 1.0, 0);
-      if (tr === 'curtain') for (let x = -7.2; x < 3.6; x += 1.3) b.box(0.12, 3.4, W + 0.05, shade(stripe, 0.9), x, 0.95, 0);
-      else b.box(11.46, 0.6, W + 0.06, stripe, -2.0, 0.95, 0);
+      if (tr === 'curtain') for (let x = -7.2; x < 3.4; x += 1.3) b.box(0.12, 3.4, W + 0.05, shade(stripe, 0.9), x, 0.95, 0);
+      else b.box(11.26, 0.6, W + 0.06, stripe, -2.1, 0.95, 0);
       if (tr === 'reefer') {
-        b.box(0.9, 2.2, 2.8, 0xdfe3f2, 3.9, 1.8, 0);
-        b.box(0.92, 1.0, 1.0, 0x3a4166, 3.9, 2.4, 0);
+        b.box(0.9, 2.2, 2.8, 0xdfe3f2, 3.0, 1.8, 0);
+        b.box(0.92, 1.0, 1.0, 0x3a4166, 3.0, 2.4, 0);
       }
       decal = tr !== 'curtain';
     } else if (tr === 'tanker') {
-      b.box(11.6, 0.4, 2.2, DARK, -2.0, 0.9, 0);
-      b.cyl(1.5, 1.5, 10.4, 0xd5dae9, -2.0, 2.75, 0, 18, 0, 0, Math.PI / 2);
-      b.sphere(1.5, 0xd5dae9, 3.2, 2.75, 0, 0.35, 1, 1, 14);
-      b.sphere(1.5, 0xd5dae9, -7.2, 2.75, 0, 0.35, 1, 1, 14);
-      b.cyl(1.52, 1.52, 0.3, stripe, -2.0, 2.75, 0, 18, 0, 0, Math.PI / 2);
-      b.box(9, 0.12, 0.8, 0x9aa1c4, -2.0, 4.25, 0);
-      for (const x of [-5.5, -2, 1.5]) b.cyl(0.4, 0.4, 0.3, 0x9aa1c4, x, 4.35, 0, 10);
-      b.box(0.1, 3, 0.6, 0x9aa1c4, -7.5, 1.2, 1.2);
-    } else if (tr === 'coil' || tr === 'logs' || tr === 'flat') {
-      b.box(11.6, 0.35, W - 0.6, tr === 'flat' ? DARK : 0x6a7194, -2.0, 0.9, 0);
-      if (tr === 'coil') {
-        for (const x of [-6, -2.2, 1.6]) {
-          b.box(1.8, 0.4, 2.4, 0x3a4166, x, 1.25, 0);
-          b.cyl(1.05, 1.05, 1.8, 0xb8c2dc, x, 2.55, 0, 16, 0, 0, Math.PI / 2);
-          b.cyl(0.45, 0.45, 1.82, 0x6a7194, x, 2.55, 0, 10, 0, 0, Math.PI / 2);
-        }
-      } else if (tr === 'logs') {
-        for (const x of [-7.4, -4.4, -1.4, 1.6, 3.4]) for (const z of [-1.4, 1.4]) b.box(0.2, 2.8, 0.2, 0x3a4166, x, 1.25, z);
-        const logC = [0xa0754e, 0x8f6644, 0xb58a5d];
-        let k = 0;
-        for (const [y, zs] of [[1.75, [-0.9, 0, 0.9]], [2.55, [-0.45, 0.45]], [3.3, [0]]]) for (const z of zs) {
-          b.cyl(0.45, 0.45, 11, logC[k++ % 3], -2.0, y, z, 10, 0, 0, Math.PI / 2);
-          b.cyl(0.36, 0.36, 11.06, 0xe2c79b, -2.0, y, z, 10, 0, 0, Math.PI / 2);
-        }
-      }
+      b.box(11.2, 0.4, 2.2, DARK, -2.3, 0.9, 0);
+      b.cyl(1.5, 1.5, 10.0, 0xd5dae9, -2.4, 2.75, 0, 18, 0, 0, Math.PI / 2);
+      b.sphere(1.5, 0xd5dae9, 2.6, 2.75, 0, 0.35, 1, 1, 14);
+      b.sphere(1.5, 0xd5dae9, -7.4, 2.75, 0, 0.35, 1, 1, 14);
+      b.cyl(1.52, 1.52, 0.3, stripe, -2.4, 2.75, 0, 18, 0, 0, Math.PI / 2);
+      b.box(9, 0.12, 0.8, 0x9aa1c4, -2.4, 4.25, 0);
+      for (const x of [-5.9, -2.4, 1.1]) b.cyl(0.4, 0.4, 0.3, 0x9aa1c4, x, 4.35, 0, 10);
+      b.box(0.1, 3, 0.6, 0x9aa1c4, -7.7, 1.2, 1.2);
+    } else if (tr === 'coil' || tr === 'logs' || tr === 'flat' || tr === 'stake') {
+      // open decks: whatever is carried is a live Load in the cargo group, not baked into the model
+      b.box(11.2, 0.35, W - 0.6, tr === 'flat' ? DARK : 0x6a7194, -2.2, 0.9, 0);
+      if (tr === 'logs') for (const x of [-7.4, -4.4, -1.4, 1.6, 3.2]) for (const z of [-1.4, 1.4]) b.box(0.2, 2.8, 0.2, 0x3a4166, x, 1.25, z);
+      if (tr === 'stake' || tr === 'coil') b.box(0.22, tr === 'stake' ? 2.3 : 1.2, W - 0.5, 0x6a7194, 3.25, 1.25, 0); // headboard
+      if (tr === 'stake') for (const x of [-7.4, -4.6, -1.8, 1.0]) for (const z of [-1.3, 1.3]) b.box(0.16, 1.5, 0.16, 0x3a4166, x, 1.25, z);
+      if (tr === 'flat') for (const x of [-7.6, 3.2]) for (const z of [-1.0, 1.0]) b.box(0.3, 0.25, 0.3, 0xf0b429, x, 1.25, z); // twistlocks
     } else if (tr === 'uld') {
-      b.box(11.6, 0.35, W - 0.4, 0x6a7194, -2.0, 0.9, 0);
-      for (const z of [-0.9, -0.3, 0.3, 0.9]) b.box(11.4, 0.12, 0.12, 0xf0b429, -2.0, 1.25, z);
-      for (const z of [-1.5, 1.5]) b.box(11.6, 0.5, 0.12, 0x9aa1c4, -2.0, 1.25, z);
-    } else if (tr === 'dump') {
-      b.box(9, 0.4, 2.6, DARK, -1.6, 0.9, 0);
-      b.box(8.6, 2.4, 3.0, o.trailerColor || 0xf0b429, -1.8, 1.3, 0);
-      b.box(8.2, 0.6, 2.6, 0x9c7a5b, -1.8, 3.5, 0);
-      b.sphere(1.2, 0x9c7a5b, -1.8, 3.9, 0, 3, 0.4, 1, 10);
+      b.box(11.2, 0.35, W - 0.4, 0x6a7194, -2.2, 0.9, 0);
+      for (const z of [-0.9, -0.3, 0.3, 0.9]) b.box(11.0, 0.12, 0.12, 0xf0b429, -2.2, 1.25, z);
+      for (const z of [-1.5, 1.5]) b.box(11.2, 0.5, 0.12, 0x9aa1c4, -2.2, 1.25, z);
     }
-    if (tr !== 'dump') wheels(b, [-6.0, -4.75], 1.2, 0.6);
-    g.add(b.mesh());
+    for (const z of [-0.95, 0.95]) b.box(0.18, 0.75, 0.18, 0x9aa1c4, 0.6, 0.15, z); // landing legs
+    wheels(b, [-6.0, -4.75], 1.2, 0.6);
+    const pivot = new T.Group();
+    pivot.position.x = KINGPIN;
+    const inner = new T.Group();
+    inner.position.x = -KINGPIN;
+    pivot.add(inner);
+    inner.add(b.mesh());
     if (decal && o.label) {
       const tex = M.labelTex(o.label, stripe);
       for (const side of [1, -1]) {
         const d = M.decal(tex, 7.2, 1.8);
-        d.position.set(-2.0, 3.0, side * (W / 2 + 0.03));
+        d.position.set(-2.1, 3.0, side * (W / 2 + 0.03));
         if (side < 0) d.rotation.y = Math.PI;
-        g.add(d);
+        inner.add(d);
       }
     }
-    const cargo = new T.Group();
-    cargo.position.set(-2.0, 1.35, 0);
-    g.add(cargo);
-    g.userData.cargo = cargo;
-    g.userData.half = 1.7;
+    inner.add(cargo);
+    g.add(pivot);
+    g.userData.pivot = pivot;
+    g.userData.kingpin = KINGPIN;
+    g.userData.wheelbase = KINGPIN - TRAILER_AXLE;
     return g;
+  };
+
+  /* ---------- live loads: what an open trailer or open-frame container is carrying ---------- */
+  // Instances are ordered bottom-up, so unloading takes from the top and loading stacks upward.
+  const LOAD_KIND = { steel: 'coils', timber: 'logs', lumber: 'planks', wire: 'reels', iron: 'heap', ore: 'heap', sand: 'heap', fabric: 'crates', comp: 'crates', glass: 'panes' };
+  M.loadKind = (mat) => LOAD_KIND[mat] || 'crates';
+  const LGEO = {
+    coils: new T.CylinderGeometry(0.95, 0.95, 1.7, 16).rotateZ(Math.PI / 2),
+    planks: new T.BoxGeometry(3.0, 0.8, 1.05),
+    reels: new T.CylinderGeometry(0.72, 0.72, 0.85, 14).rotateX(Math.PI / 2),
+    crates: new T.BoxGeometry(1.15, 1.0, 1.1),
+    panes: new T.BoxGeometry(1.8, 1.65, 0.08),
+  };
+  const sized = new Map();
+  const cached = (key, make) => { if (!sized.has(key)) sized.set(key, make()); return sized.get(key); };
+  // a long trapezoid mound of bulk material, 1 unit tall (scaled by fill level)
+  const heapGeometry = (L) => cached('heap' + L, () => {
+    const sh = new T.Shape();
+    sh.moveTo(-1.15, 0); sh.lineTo(1.15, 0); sh.lineTo(0.75, 0.55); sh.lineTo(0.25, 1); sh.lineTo(-0.25, 1); sh.lineTo(-0.75, 0.55); sh.closePath();
+    const geo = new T.ExtrudeGeometry(sh, { depth: L - 0.6, bevelEnabled: false });
+    geo.rotateY(Math.PI / 2);
+    geo.translate(-(L - 0.6) / 2, 0, 0);
+    return geo;
+  });
+  class Load {
+    // L: usable deck length; the group's origin is the middle of the deck surface
+    constructor(mat, L) {
+      const m = WT.SUP.MAT[mat] || {};
+      this.mat = mat;
+      this.kind = M.loadKind(mat);
+      this.colors = m.colors || [0xc89b63];
+      this.g = new T.Group();
+      this.frac = -1;
+      const k = this.kind;
+      if (k === 'heap') {
+        this.mesh = new T.Mesh(heapGeometry(L), new T.MeshLambertMaterial({ color: this.colors[0], flatShading: true }));
+        this.mesh.castShadow = this.mesh.receiveShadow = true;
+        this.g.add(this.mesh);
+        this.h = 1.9;
+        this.set(0);
+        return;
+      }
+      const pos = [];
+      const fixed = new MB();
+      let geo = LGEO[k];
+      if (k === 'coils') {
+        const n = Math.max(1, Math.floor(L / 3.4));
+        for (let i = 0; i < n; i++) {
+          const x = (i - (n - 1) / 2) * 3.4;
+          fixed.box(1.8, 0.35, 2.3, 0x3a4166, x, 0, 0);
+          pos.push([x, 1.3, 0]);
+        }
+        this.h = 2.25;
+      } else if (k === 'logs') {
+        geo = cached('logs' + L, () => new T.CylinderGeometry(0.42, 0.42, L - 0.4, 9).rotateZ(Math.PI / 2));
+        for (const [y, zs] of [[0.42, [-0.9, 0, 0.9]], [1.15, [-0.45, 0.45]], [1.85, [0]]]) for (const z of zs) pos.push([0, y, z]);
+        this.h = 2.27;
+      } else if (k === 'planks') {
+        const n = Math.max(1, Math.floor(L / 3.2));
+        for (const y of [0.4, 1.25]) for (let i = 0; i < n; i++) for (const z of [-0.58, 0.58]) pos.push([(i - (n - 1) / 2) * 3.2, y, z]);
+        this.h = 1.65;
+      } else if (k === 'reels') {
+        const n = Math.max(1, Math.floor(L / 1.7));
+        for (let i = 0; i < n; i++) for (const z of [-0.6, 0.6]) pos.push([(i - (n - 1) / 2) * 1.7, 0.72, z]);
+        this.h = 1.45;
+      } else if (k === 'panes') {
+        // glass sheets leaning on both sides of A-frame racks
+        const n = Math.max(1, Math.floor(L / 2.0));
+        for (let i = 0; i < n; i++) {
+          const x = (i - (n - 1) / 2) * 2.0;
+          fixed.box(1.9, 0.2, 1.2, 0x6a7194, x, 0, 0);
+          fixed.box(1.9, 1.8, 0.14, 0x6a7194, x, 0.2, 0);
+        }
+        for (let l = 0; l < 4; l++) for (let i = 0; i < n; i++) for (const sd of [-1, 1]) pos.push([(i - (n - 1) / 2) * 2.0, 1.05, sd * (0.2 + l * 0.13), sd * 0.12]);
+        this.h = 1.9;
+      } else {
+        const n = Math.max(1, Math.floor(L / 1.25));
+        for (const y of [0.5, 1.52]) for (let i = 0; i < n; i++) for (const z of [-0.6, 0.6]) pos.push([(i - (n - 1) / 2) * 1.25, y, z]);
+        this.h = 2.02;
+      }
+      // bottom tier first, front (headboard) end first: unloading empties the door end, loading fills from the front
+      pos.sort((p, q) => p[1] - q[1] || q[0] - p[0]);
+      if (fixed.p.length) this.g.add(fixed.mesh());
+      this.im = new T.InstancedMesh(geo, new T.MeshLambertMaterial({ color: 0xffffff, transparent: k === 'panes', opacity: k === 'panes' ? 0.75 : 1 }), pos.length);
+      this.im.castShadow = this.im.receiveShadow = true;
+      const _m = new T.Matrix4(), _q = new T.Quaternion(), _e = new T.Euler(), _c = new T.Color(), _p = new T.Vector3(), _s = new T.Vector3(1, 1, 1);
+      pos.forEach(([x, y, z, tilt], i) => {
+        _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(tilt || 0, 0, 0)), _s);
+        this.im.setMatrixAt(i, _m);
+        this.im.setColorAt(i, _c.setHex(k === 'panes' ? 0xbfe3f2 : this.colors[i % this.colors.length]));
+      });
+      this.cap = pos.length;
+      this.g.add(this.im);
+      this.set(0);
+    }
+    set(frac) {
+      frac = WT.clamp(frac, 0, 1);
+      if (Math.abs(frac - this.frac) < 0.005) return;
+      this.frac = frac;
+      if (this.mesh) {
+        this.mesh.visible = frac > 0.01;
+        this.mesh.scale.y = 0.12 + frac * (this.h - 0.12);
+      } else this.im.count = Math.round(frac * this.cap);
+    }
+    // world position of a spot on top of the load, where the next item is taken from / dropped onto
+    topPoint() {
+      this.g.updateWorldMatrix(true, false);
+      return this.g.localToWorld(new T.Vector3(WT.rnd(-2, 2), this.h * Math.max(0.25, this.frac), 0));
+    }
+  }
+  M.Load = Load;
+
+  // Open-frame container (open-top / flat-rack style): corner posts and top rails so it stacks and is
+  // crane-handled like any box, but the cargo stays in plain view.
+  M.openFrame = (color, len = 11) => {
+    const b = new MB();
+    const w = 2.6, h = 2.7, frame = shade(color, 0.8);
+    b.box(len, 0.25, w, shade(color, 0.6), 0, 0, 0);
+    for (const x of [-len / 2 + 0.12, len / 2 - 0.12]) for (const z of [-w / 2 + 0.1, w / 2 - 0.1]) b.box(0.24, h, 0.2, frame, x, 0, z);
+    for (const z of [-w / 2 + 0.08, w / 2 - 0.08]) {
+      b.box(len, 0.18, 0.16, frame, 0, h - 0.18, z);
+      b.box(len - 0.3, 0.6, 0.08, color, 0, 0.25, z); // low side wall
+      const n = Math.round(len / 1.1);
+      for (let i = 1; i < n; i++) b.box(0.1, 0.6, 0.1, frame, -len / 2 + (i * len) / n, 0.25, z * 1.02);
+    }
+    for (const x of [-len / 2 + 0.06, len / 2 - 0.06]) {
+      b.box(0.12, 0.18, w, frame, x, h - 0.18, 0);
+      b.box(0.08, 1.1, w - 0.3, color, x, 0.25, 0); // end wall
+    }
+    const m = b.mesh();
+    m.userData.h = h;
+    return m;
   };
 
   M.CAR_KINDS = ['sedan', 'sedan', 'suv', 'van', 'pickup'];

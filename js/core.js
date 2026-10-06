@@ -1,7 +1,7 @@
 /* WareTrack – core utilities: sim clock, coroutines, path following, entity registry */
 (function () {
   const WT = (window.WT = {});
-  WT.VERSION = '5.1.0';
+  WT.VERSION = '5.2.0';
   WT.BUILD = 'dev'; // replaced with the commit hash by scripts/build.mjs
 
   WT.clamp = (v, a, b) => Math.max(a, Math.min(b, v));

@@ -132,18 +132,26 @@
 
   /* ---------- containers ---------- */
   class Container extends Entity {
-    constructor(color, len = 11, mesh) {
+    // openMat: an open-frame box for that material, its load visible (and craned) in the open
+    constructor(color, len = 11, mesh, openMat) {
       super();
       this.kind = 'container';
       this.id = WT.nextContainerId();
       this.len = len;
-      this.size = len > 8 ? "40' HC" : "20' DV";
+      this.open = openMat || null;
+      this.size = (len > 8 ? "40'" : "20'") + (this.open ? (M.loadKind(this.open) === 'heap' ? ' open-top' : ' flat-rack') : len > 8 ? ' HC' : ' DV');
       this.product = WT.pick(WT.PRODUCTS);
       this.weight = WT.rint(len > 8 ? 9000 : 5000, len > 8 ? 26000 : 18000);
       this.seal = 'SL' + WT.rint(100000, 999999);
       this.status = 'Stored';
       this.loc = '';
-      this.mesh = mesh || M.container(color === null || color === undefined ? WT.pick(M.CONT_COLORS) : color, len);
+      const col = color === null || color === undefined ? WT.pick(M.CONT_COLORS) : color;
+      this.mesh = mesh || (this.open ? M.openFrame(col, len) : M.container(col, len));
+      if (this.open) {
+        this.load = new M.Load(this.open, len - 0.5);
+        this.load.g.position.y = 0.25;
+        this.mesh.add(this.load.g);
+      }
       this.journey = [];
       this.contents = null;
       this.full = false;

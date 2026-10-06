@@ -16,9 +16,9 @@
     chem: { name: 'Chemicals', size: 20, modes: ['road'], pack: 'tanker' },
     syrup: { name: 'Syrup concentrate', size: 20, modes: ['road'], pack: 'tanker' },
     steel: { name: 'Steel coils', size: 18, modes: ['internal', 'road'], pack: 'coil', item: 'can', colors: [0xb8c2dc, 0x9aa1c4] },
-    wire: { name: 'Copper wire', size: 14, modes: ['internal', 'road'], pack: 'curtain', item: 'can', colors: [0xc87533, 0xb86a2c] },
+    wire: { name: 'Copper wire', size: 14, modes: ['internal', 'road'], pack: 'bundle', item: 'can', colors: [0xc87533, 0xb86a2c] },
     resin: { name: 'Plastic resin', size: 20, modes: ['internal', 'road'], pack: 'tanker' },
-    lumber: { name: 'Lumber', size: 18, modes: ['internal', 'road'], pack: 'curtain', item: 'plank', colors: [0xdcb47e, 0xe2c79b] },
+    lumber: { name: 'Lumber', size: 18, modes: ['internal', 'road'], pack: 'bundle', item: 'plank', colors: [0xdcb47e, 0xe2c79b] },
     glass: { name: 'Float glass', size: 16, modes: ['internal', 'sea', 'road'], pack: 'container', item: 'carton', colors: [0xbfe3f2, 0xd6eef7, 0xa9d6ea] },
   };
   // intermediate plants feed assembly plants inside the park
@@ -52,15 +52,17 @@
     c.journey.push({ t: WT.sim.minutes, text });
     if (c.journey.length > 14) c.journey.shift();
   };
-  S.newContainer = (len = 11) => {
+  // raw materials travel in open-frame boxes (open-tops for bulk, flat-racks for crates, glass and coils)
+  S.openFor = (m) => (m && S.MAT[m] && S.MAT[m].pack === 'container' ? m : null);
+  S.newContainer = (len = 11, mat) => {
     const line = WT.pick(S.LINES);
-    const c = new WT.Container(line.color, len);
+    const c = new WT.Container(line.color, len, undefined, S.openFor(mat));
     c.line = line.name;
     return c;
   };
-  S.fillPO = (u, po) => { u.contents = { kind: 'mat', mat: po.mat, qty: po.qty, name: S.MAT[po.mat].name, po }; u.full = true; u.po = po; po.unit = u; };
+  S.fillPO = (u, po) => { u.contents = { kind: 'mat', mat: po.mat, qty: po.qty, name: S.MAT[po.mat].name, po }; u.full = true; u.po = po; po.unit = u; if (u.load) u.load.set(1); };
   S.fillProduct = (c, name, qty) => { c.contents = { kind: 'product', name, qty }; c.full = true; c.po = null; };
-  S.empty = (c) => { c.contents = null; c.full = false; c.po = null; };
+  S.empty = (c) => { c.contents = null; c.full = false; c.po = null; if (c.load) c.load.set(0); };
   S.describe = (c) => {
     if (!c.contents) return 'Empty';
     if (c.contents.kind === 'mat') return `${c.contents.name} → ${c.contents.po ? c.contents.po.to.id : '?'}`;
@@ -153,7 +155,7 @@
   }
   // local fleet yards sit just off the highway either side of each avenue
   const near = (A) => A + (Math.random() < 0.5 ? -1 : 1) * WT.rnd(70, 160);
-  const trailerFor = (m) => ({ container: 'flat', tanker: 'tanker', coil: 'coil', logs: 'logs', curtain: 'curtain', uld: 'uld', box: 'box' }[S.MAT[m].pack] || 'box');
+  const trailerFor = (m) => ({ container: 'flat', tanker: 'tanker', coil: 'coil', logs: 'logs', bundle: 'stake', curtain: 'curtain', uld: 'uld', box: 'box' }[S.MAT[m].pack] || 'box');
 
   // what to do with an empty container / ULD after the factory has unloaded it
   S.emptyPlan = (t) => {
@@ -163,9 +165,10 @@
       return null;
     }
     if (!t.container || t.container.full) return null;
+    const open = t.container.open; // open frames can't be stuffed with export pallets
     const term = terminals().filter((f) => (f.lazyN || 0) < 5 && f.stackRoom() - f.pendingDrop > 1);
     const whs = active('Warehouse').filter((w) => w.stock > 60 && w.freeDocks('stuff'));
-    if (term.length && whs.length && Math.random() < 0.7) {
+    if (!open && term.length && whs.length && Math.random() < 0.7) {
       const wh = WT.pick(whs), tm = WT.pick(term);
       const d1 = wh.reserve('stuff');
       if (d1) {
@@ -205,10 +208,11 @@
     if ((po.to.lazyN || 0) >= 4) return false;
     const tr = trailerFor(po.mat);
     let c = null;
-    if (tr === 'flat') { c = S.newContainer(11); S.fillPO(c, po); S.note(c, `Trucked in from the interstate for ${po.to.id} (${po.id})`); }
+    if (tr === 'flat') { c = S.newContainer(11, po.mat); S.fillPO(c, po); S.note(c, `Trucked in from the interstate for ${po.to.id} (${po.id})`); }
     const t = launch({ variant: tr === 'flat' ? 'flat' : tr === 'tanker' ? 'tanker' : 'box', trailer: tr === 'uld' ? 'curtain' : tr, carrier: carrier(), container: c, mission: `Supplier ${po.id}: ${S.MAT[po.mat].name} → ${po.to.id}` }, [{ fac: po.to, op: 'unload', lazy: true }]);
     if (!t) { if (c) WT.unregister(c); return false; }
     t.po = po; t.cargo = { mat: po.mat, qty: po.qty };
+    t.setBedLoad(po.mat, 1);
     if (c) t.plan = S.emptyPlan;
     po.vehicle = t;
     S.ev(po, `In transit · ${t.id} (road)`);
@@ -220,11 +224,12 @@
     if (!p || !p.active) { const ps = S.producers(po.mat); if (!ps.length) { po.mode = 'road'; S.roadQ.push(po); return true; } p = po.from = ps[0]; }
     if (p.outStock < po.qty || !p.freeDocks('ship') || (po.to.lazyN || 0) >= 4) { if (p.outStock < po.qty) S.ev(po, `In production · ${p.id}`); return false; }
     const tr = trailerFor(po.mat);
-    const t = launch({ variant: tr === 'tanker' ? 'tanker' : 'box', trailer: tr === 'flat' ? 'curtain' : tr, carrier: { name: 'Riverside Shuttle', cab: 0x2f56e0, stripe: 0x2f56e0 }, startAt: true, mission: `Transfer ${po.id}: ${p.id} → ${po.to.id}` },
+    const t = launch({ variant: tr === 'tanker' ? 'tanker' : 'box', trailer: tr === 'flat' ? 'stake' : tr, carrier: { name: 'Riverside Shuttle', cab: 0x2f56e0, stripe: 0x2f56e0 }, startAt: true, mission: `Transfer ${po.id}: ${p.id} → ${po.to.id}` },
       [{ fac: p, op: 'ship', po }, { fac: po.to, op: 'unload', lazy: true }]);
     if (!t) return false;
     p.outStock -= po.qty;
     t.po = po; t.cargo = { mat: po.mat, qty: po.qty };
+    t.setBedLoad(po.mat, 0); // shuttle starts empty at the producer's shipping bay
     po.vehicle = t;
     S.ev(po, `Collecting · ${t.id} at ${p.id}`);
     return true;

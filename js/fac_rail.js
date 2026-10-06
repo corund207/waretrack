@@ -71,12 +71,17 @@
         let cont = null;
         const po = o.terminal ? this.manifest[i] : null;
         if (po) {
-          cont = WT.SUP.newContainer(11);
+          cont = WT.SUP.newContainer(11, po.mat);
           WT.SUP.fillPO(cont, po);
           WT.SUP.note(cont, `Loaded at ${origin} ramp for ${po.to.id} (${po.id})`);
           WT.SUP.ev(po, `On train · ${this.id} from ${origin}`);
           po.vehicle = this;
-        } else if (!o.terminal && kind === 'container' && Math.random() < (o.fill === undefined ? 0.75 : o.fill)) cont = WT.SUP.newContainer(11);
+        } else if (!o.terminal && kind === 'container' && Math.random() < (o.fill === undefined ? 0.75 : o.fill)) {
+          // through traffic: mostly boxes, some open frames of raw material
+          const om = Math.random() < 0.3 ? WT.pick(['iron', 'ore', 'sand', 'fabric', 'glass']) : null;
+          cont = WT.SUP.newContainer(11, om);
+          if (om) cont.load.set(WT.rnd(0.6, 1));
+        }
         if (cont) { cont.status = 'On rail'; w.userData.slot.add(cont.mesh); }
         this.cars.push({ g: w, cont });
       }

@@ -32,8 +32,10 @@ try {
   await shot('01-founding', `(() => { (${calm})(); const f = WT.facilities[0]; const [x, z] = f.center(); WT.flyTo(x, z, 150); })()`);
 
   await advance(page, 22);
-  await until(() => WT.trucks.some((t) => /Revers/.test(t.status) && t.curLeg && t.curLeg.fac.type === 'Factory'));
-  await shot('03-factory-docks', `(() => { (${calm})(); const t = WT.trucks.find((t) => /Revers/.test(t.status) && t.curLeg && t.curLeg.fac.type === 'Factory') || WT.trucks.find((t) => t.curLeg && t.curLeg.fac.type === 'Factory'); const f = t.curLeg.fac; const [x, z] = f.toWorld(48, 12); WT.flyTo(x, z, 78); return t.id + ' @ ' + f.id; })()`);
+  // an open load (bed or open-frame box) being lifted off at a factory dock
+  const openUnload = () => WT.trucks.find((t) => (t.bedLoad || (t.container && t.container.open)) && /Unloading/.test(t.status) && t.loaded >= 2 && t.curLeg && t.curLeg.fac.type === 'Factory');
+  await until(`(${openUnload})()`, 400);
+  await shot('03-factory-docks', `(() => { (${calm})(); const t = (${openUnload})() || WT.trucks.find((t) => t.curLeg && t.curLeg.fac.type === 'Factory'); WT.flyTo(t.actor.x - 1, t.actor.z, 46); return t.id + ' ' + t.status + ' @ ' + t.curLeg.fac.id; })()`, { settleMs: 3200 });
 
   await until(() => WT.ships.some((s) => s.port && /Berthed|Discharg|Loading|Unload/i.test(s.status)), 180);
   await shot('04-seaport', at('Port terminal', 130, 10, 6));

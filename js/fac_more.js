@@ -107,7 +107,8 @@
       } else {
         t.status = 'Collecting empty';
         yield* this.queue(function* () {
-          const s = this.slots.filter((q) => q.items.length).sort((a, b) => b.items.length - a.items.length)[0];
+          const top = (q) => q.items[q.items.length - 1];
+          const s = this.slots.filter((q) => q.items.length && !top(q).open).sort((a, b) => b.items.length - a.items.length)[0] || this.slots.filter((q) => q.items.length)[0];
           if (!s) return;
           const c = s.items[s.items.length - 1];
           const p = truckLocal();

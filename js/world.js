@@ -127,9 +127,10 @@
     W.dashes(g, edge, COL.mark, 0.055);
     // street lamps both sides
     const lb = new M.MB();
+    // none past |z| 556: the rail and port terminals' gate lanes cross the avenue ends there
     for (let z = 14; z < len; z += 34) {
-      M.lampInto(lb, -7.6, z, 0);
-      M.lampInto(lb, 7.6, z + 17, Math.PI);
+      if (from + z < 556) M.lampInto(lb, -7.6, z, 0);
+      if (from + z + 17 < 556) M.lampInto(lb, 7.6, z + 17, Math.PI);
     }
     if (lb.p.length) g.add(lb.mesh());
     g.scale.z = 0.001;

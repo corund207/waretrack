@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://github.com/corund207/waretrack/actions/workflows/ci.yml"><img src="https://github.com/corund207/waretrack/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/version-v5.1.0-2f56e0" alt="version" />
+  <img src="https://img.shields.io/badge/version-v5.2.0-2f56e0" alt="version" />
   <img src="https://img.shields.io/badge/three.js-r147-black" alt="three.js" />
   <img src="https://img.shields.io/badge/build-zero%20dependencies-3ddc84" alt="no dependencies" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" /></a>
@@ -101,6 +101,13 @@ that leave on trains and ships. Until a primary plant exists, its product is bou
 primary plant once enough assembly lines depend on it. Plants starve, visibly and on their cards, when a delivery is
 late, and run out of space ("Output full") when nobody collects.
 
+**Loads you can see.** Raw materials from ships and trains travel in **open-frame containers**: open-tops heaped
+with ore or sand, and flat-racks carrying crates or glass on A-frame racks. Cranes lift them with the cargo in plain
+view. Utility trailers show what they carry too: steel coils in cradles, log stakes, lumber bundles and wire reels.
+At the factory dock each piece is swung off the top of the load onto the dock belt, so the load visibly shrinks until
+the bed is bare. At a producer's shipping bay, a shuttle's bed fills from the headboard back as product comes off
+the line.
+
 **Realistic handling:** terminal appointments with a truck queue at the gate, staging lanes inside plant gates,
 street-turned empties, a container depot, and long lead times for sea freight that primary plants buffer against.
 
@@ -115,6 +122,9 @@ street-turned empties, a container depot, and long lead times for sea freight th
   ("don't block the box").
 - **Dispatch metering.** Dispatch watches how much traffic is queued. It meters new truck releases when the roads get
   busy and holds them when they're jammed (see *Supply → Roads*). Finished trucks leave by the nearest exit.
+- **Articulated semis.** Every rig is a tractor and a semi-trailer hinged at the fifth wheel. Pulling forward, the
+  trailer trails the tractor through bends like a real one and cuts slightly inside. Reversing onto a dock, the
+  trailer leads and the tractor follows it in. Collision bodies follow both parts.
 - **Off-street docking.** Every unload path is laid out clear of buildings, belts, stockpiles, crane legs and pylons,
   and a geometry audit checks each truck's full body sweep. At factories and the air terminal, trucks pull past the
   bay on an apron lane and **reverse onto the dock**, while traffic behind holds back to give them room. Terminal
@@ -124,7 +134,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
   gate-in check.
 - The vehicle card's *Traffic* row says why a vehicle is waiting: red light, junction busy, exit blocked, or queued
   behind another vehicle.
-- The version is shown next to the logo (currently **v5.1.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
+- The version is shown next to the logo (currently **v5.2.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
 - Vehicle variety: cab-over and long-hood rigs; box, curtainsider, reefer, tanker, coil, log, container and dump
   trailers; concrete mixers; sedans, SUVs, vans, pickups and shuttle buses. Through trains carry tank, hopper and box
   wagons, and tankers and bulk carriers pass offshore.

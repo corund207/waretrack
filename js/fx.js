@@ -161,6 +161,24 @@
   }
   FX.Conveyor = Conveyor;
 
+  // one piece of cargo swung between a truck bed and a belt (or back), on a short lifting arc
+  FX.hop = function* (from, to, color, dur = 0.42, item = 'carton') {
+    const kind = ITEM[item] || ITEM.carton;
+    const m = new T.Mesh(kind.geo, new T.MeshLambertMaterial({ color: color === undefined ? 0xcf9d62 : color }));
+    m.castShadow = true;
+    m.userData.fx = true; // transient effect, not scenery
+    WT.scene.add(m);
+    const lift = 1.2 + Math.abs(to.y - from.y) * 0.5, spin = WT.rnd(-1.2, 1.2);
+    yield* WT.tween(dur, (k) => {
+      const e = k * k * (3 - 2 * k);
+      m.position.lerpVectors(from, to, e);
+      m.position.y += Math.sin(Math.PI * k) * lift + kind.y;
+      m.rotation.y = spin * e;
+    });
+    WT.scene.remove(m);
+    m.material.dispose();
+  };
+
   /* ---------- physical stockpiles that track inventory ---------- */
   const SP = {
     coils: { geo: new T.CylinderGeometry(0.95, 0.95, 1.4, 14).rotateZ(Math.PI / 2), h: 1.9, gap: [1.7, 2.0] },

@@ -162,7 +162,7 @@
       // short roller beds from the trailer's rear doors straight through the dock door
       this.docks.forEach((d) => {
         if (d.ops[0] === 'ship') {
-          d.obelt = new FX.Conveyor(g, [[70, 1.3, d.z], [67, 1.3, d.z], [65.4, 1.3, d.z]], { item: outMat.item || 'can', speed: 3, spacing: 1.4, colors: outMat.colors || [0xe9ecf7] });
+          d.obelt = new FX.Conveyor(g, [[70, 1.3, d.z], [67, 1.3, d.z], [65.4, 1.3, d.z]], { item: outMat.item || 'can', speed: 3, spacing: 1.4, colors: outMat.colors || [0xe9ecf7], onArrive: (it) => d.onOut && d.onOut(it) });
           return;
         }
         d.belt = new FX.Conveyor(g, [[65.4, 1.3, d.z], [67, 1.3, d.z], [70.5, 1.3, d.z]], { item: 'carton', speed: 3, spacing: 1.3 });
@@ -237,6 +237,31 @@
       while (t.loaded < n) { t.loaded++; yield* WT.sleep(0.6); }
       this.group.remove(hose);
     }
+    // world position of a point on a belt
+    beltPoint(belt, i) {
+      const p = belt.pts[i < 0 ? belt.pts.length + i : i];
+      belt.mesh.parent.updateWorldMatrix(true, false);
+      return belt.mesh.parent.localToWorld(new T.Vector3(p[0], p[1] + 0.2, p[2]));
+    }
+    // where cargo enters/leaves a closed trailer or box: just inside the rear doors
+    rearPoint(t) {
+      const c = t.mesh.userData.cargo;
+      c.updateWorldMatrix(true, false);
+      return c.localToWorld(new T.Vector3(-4.6, 0.6, 0));
+    }
+    // take items one by one off an open load (truck bed or open-frame container) and onto the dock belt
+    *unloadOpen(t, belt, unit, col, item) {
+      const to = this.beltPoint(belt, 0);
+      while (t.loaded < t.total) {
+        const last = belt.items[belt.items.length - 1];
+        if (last && last.s < belt.spacing + 0.5) { yield; continue; }
+        const from = unit.topPoint(), c = col();
+        t.loaded++;
+        unit.set(1 - t.loaded / t.total);
+        yield* FX.hop(from, to, c, 0.42, item);
+        while (!belt.push(c)) yield;
+      }
+    }
     *serve(t, leg) {
       const S = WT.SUP, d = leg.dock;
       t.where = `${this.id} · Dock ${d.n}`;
@@ -247,8 +272,18 @@
         if (po) S.ev(po, `Loading · ${t.id} at ${this.id}`);
         if (t.trailer === 'tanker') yield* this.hose(t, d, t.total);
         else {
+          // each piece rides the dock belt out, then is swung onto the bed (or into the trailer)
           t.status = 'Loading';
+          const from = this.beltPoint(d.obelt, -1), mat = this.recipe.out;
+          let landed = 0;
+          d.onOut = (it) => WT.spawn((function* () {
+            yield* FX.hop(from, t.bedLoad ? t.bedLoad.topPoint() : this.rearPoint(t), it.c, 0.42, outM.item || 'can');
+            landed++;
+            t.setBedLoad(mat, landed / t.total);
+          }).call(this));
           while (t.loaded < t.total) { if (d.obelt.push(WT.pick(outM.colors || [0xe9ecf7]))) { t.loaded++; yield* WT.sleep(0.45); } else yield; }
+          while (landed < t.total) yield;
+          d.onOut = null;
         }
         if (po) S.ev(po, `In transit · ${t.id} → ${po.to.id}`);
         yield* WT.sleep(0.8);
@@ -267,6 +302,16 @@
         for (const u of t.ulds) { S.note(u, `Broken down at ${this.id}`); u.status = 'Unloading'; u.loc = this.id; }
         while (t.loaded < t.total) { if (d.belt.push(col())) { t.loaded++; yield* WT.sleep(0.45); } else yield; }
         for (const u of t.ulds) { S.empty(u); u.status = 'Empty'; S.note(u, 'Empty — returning to airport'); }
+      } else if (t.container && t.container.open) {
+        // open-top / flat-rack: the load is lifted straight out of the frame
+        const c = t.container;
+        t.status = 'Unloading';
+        c.status = 'Unloading'; c.loc = this.id;
+        S.note(c, `Unloading at ${this.id}`);
+        yield* this.unloadOpen(t, d.cbelt, c.load, col, M_ ? M_.item : undefined);
+        S.empty(c);
+        c.status = 'Empty'; c.loc = t.id;
+        S.note(c, `Emptied at ${this.id}`);
       } else if (t.container) {
         const c = t.container;
         t.status = 'Destuffing';
@@ -282,6 +327,9 @@
         S.note(c, `Emptied at ${this.id}`);
       } else if (t.trailer === 'tanker') {
         yield* this.hose(t, d, t.total);
+      } else if (t.bedLoad) {
+        t.status = 'Unloading';
+        yield* this.unloadOpen(t, d.belt, t.bedLoad, col, M_ ? M_.item : t.bedLoad.mat && S.MAT[t.bedLoad.mat].item);
       } else {
         t.status = 'Unloading';
         while (t.loaded < t.total) { if (d.belt.push(col())) { t.loaded++; yield* WT.sleep(0.45); } else yield; }

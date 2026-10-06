@@ -186,7 +186,7 @@
       const origin = WT.pick(['Rotterdam', 'Shanghai', 'Santos', 'Busan', 'Antwerp', 'Singapore']);
       ship.manifest = (ship.manifest || []).map((po) => {
         const st = stacks.filter((q) => q.items.length < 3).sort((p, q) => p.items.length - q.items.length || Math.abs(p.x) - Math.abs(q.x))[0];
-        const c = S.newContainer(5.8);
+        const c = S.newContainer(5.8, po.mat);
         S.fillPO(c, po);
         ship.mesh.add(c.mesh);
         c.mesh.position.set(st.x, 3.8 + st.items.length * 2.75, st.z);
