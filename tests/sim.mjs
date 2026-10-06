@@ -58,9 +58,22 @@ try {
   check(maxOverlap <= 3, `vehicles never pile into each other (max ${maxOverlap} touching pairs)`);
   check(maxJam < 0.85, `traffic keeps moving (peak ${Math.round(maxJam * 100)}% queued)`);
 
-  const audit = await page.evaluate(auditPaths);
-  for (const r of audit.report.slice(0, 8)) console.error(`    ${r.fac} ${r.type}: ${r.n} hits ${JSON.stringify(r.sample)}`);
-  check(audit.report.length === 0, `path audit: ${audit.checked} truck paths clear of buildings (${audit.report.length} violations)`);
+  // audit twice, 30 sim-seconds apart: anything in a lane both times is fixed scenery; things that moved
+  // (a box swinging under a crane, a part being handed over) are transient and only reported for information
+  const first = await page.evaluate(auditPaths);
+  await page.evaluate(() => { for (let k = 0; k < 300; k++) { WT.sim.dt = 0.1; WT.stepTasks(); WT.emit('frame', k * 0.1); WT.FX.update(0.1); } });
+  const second = await page.evaluate(auditPaths);
+  const key = (r, h) => `${r.fac}|${h.label}|${h.at}`;
+  const again = new Set(second.report.flatMap((r) => r.all.map((h) => key(r, h))));
+  const report = [], transient = [];
+  for (const r of first.report) {
+    const stuck = r.all.filter((h) => again.has(key(r, h)));
+    if (stuck.length) report.push({ ...r, n: stuck.length, sample: stuck.slice(0, 3) });
+    else transient.push(r);
+  }
+  for (const r of transient.slice(0, 4)) console.log(`    (transient, ignored) ${r.fac}: ${JSON.stringify(r.sample[0])}`);
+  for (const r of report.slice(0, 8)) console.error(`    ${r.fac} ${r.type}: ${r.n} hits ${JSON.stringify(r.sample)}`);
+  check(report.length === 0, `path audit: ${first.checked} truck paths clear of buildings (${report.length} violations)`);
 } catch (e) {
   failed++;
   console.error('✗ ' + e.message);
@@ -99,6 +112,13 @@ function auditPaths() {
   ray.far = 14;
   const down = new T.Vector3(0, -1, 0), org = new T.Vector3();
   const owner = (o) => { while (o) { if (o.userData && o.userData.entityId) { const e = WT.entities.get(o.userData.entityId); if (e) return e.id || e.kind; } o = o.parent; } return 'scene'; };
+  // name the thing that was hit: an entity whose mesh contains it (containers, vehicles) or its size
+  const describe = (o) => {
+    const byMesh = new Map([...WT.entities.values()].filter((e) => e.mesh).map((e) => [e.mesh, e]));
+    for (let q = o; q; q = q.parent) { const e = byMesh.get(q); if (e) return `${e.kind} ${e.id} (${e.status || ''}${e.loc ? ' @ ' + e.loc : ''})`; }
+    const sz = new T.Box3().setFromObject(o).getSize(new T.Vector3());
+    return `${o.type} ${sz.x.toFixed(1)}×${sz.y.toFixed(1)}×${sz.z.toFixed(1)}`;
+  };
   let checked = 0;
   function check(pts, label, rev) {
     checked++;
@@ -110,7 +130,7 @@ function auditPaths() {
         if (treeHit(org.x, org.z)) { out.push({ label, at: [Math.round(org.x), Math.round(org.z)], hit: 'tree' }); continue; }
         ray.set(org, down);
         const h = ray.intersectObjects(targets, false).find((h) => h.point.y > 0.35 && h.point.y < 4.6);
-        if (h) out.push({ label, at: [Math.round(q.x), Math.round(q.z)], hit: owner(h.object), obj: (h.object.type + ":" + (h.object.parent && h.object.parent.type) + ":" + (h.object.geometry && h.object.geometry.type)), y: +h.point.y.toFixed(1) });
+        if (h) out.push({ label, at: [Math.round(q.x), Math.round(q.z)], y: +h.point.y.toFixed(1), hit: owner(h.object), what: describe(h.object) });
       }
     }
     return out;
@@ -124,7 +144,7 @@ function auditPaths() {
       const dp = f.dockPath && f.dockPath(d);
       if (dp) v = v.concat(check(dp, 'reverse', true));
       if (f.stagePath) v = v.concat(check([...lane, ...f.stagePath(), ...f.inPath(d).slice(f.stageSkip || 0)], 'stage'));
-      if (v.length) report.push({ fac: f.id, type: f.type, n: v.length, sample: v.slice(0, 3) });
+      if (v.length) report.push({ fac: f.id, type: f.type, n: v.length, sample: v.slice(0, 3), all: v });
     }
   }
   for (const f of WT.facilities) {
@@ -132,10 +152,10 @@ function auditPaths() {
     for (const side of ['W', 'E']) {
       const rin = WT.W.route({ edge: side }, f.gateIn), last = rin.slice(-2);
       const dir = Math.sign(last[0][0] - rin[0][0]) || 1;
-      let v = check([[last[0][0] - dir * 40, last[0][1]], ...last, ...f.inPath(f.docks[0] || null).slice(0, 2)], 'road-in');
+      let v = check([[last[0][0] - dir * 40, last[0][1]], ...last, ...f.inPath(f.docks[0] || null).slice(0, 3)], 'road-in'); // through the first turn inside the gate, as a truck drives it
       const rout = WT.W.route(f.gateOut, { edge: side });
       v = v.concat(check([...f.outPath(f.docks[0] || null).slice(-2), ...rout.slice(0, 2), [rout[1][0] + (side === 'W' ? -40 : 40), rout[1][1]]], 'road-out'));
-      if (v.length) report.push({ fac: f.id, type: 'road → ' + f.type, n: v.length, sample: v.slice(0, 3) });
+      if (v.length) report.push({ fac: f.id, type: 'road → ' + f.type, n: v.length, sample: v.slice(0, 3), all: v });
     }
   }
   return { checked, report };
