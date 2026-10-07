@@ -302,8 +302,11 @@
           let car = null, bd = Infinity;
           for (const k of open) { const kx = k.g.position.x; if (this.allowed(c, kx) && Math.abs(kx - c.group.position.x) < bd) { bd = Math.abs(kx - c.group.position.x); car = k; } }
           if (!car) return null;
+          // Match container type to wagon type: bulk wagons (slotAt) need open-top bins, regular wagons need standard containers
+          const isBulkWagon = !!car.g.userData.slotAt;
+          const containerFilter = (x) => this.isFullExport(x) && !x.reserved && (!!x.openTopBin === isBulkWagon);
           car.g.getWorldPosition(p);
-          const r = this.unstackLift(c, (x) => this.isFullExport(x) && !x.reserved, p.x, p.z, 1.45, (cont, m) => {
+          const r = this.unstackLift(c, containerFilter, p.x, p.z, 1.45, (cont, m) => {
             // Place export container on wagon: handle bulk wagons (slotAt) and regular wagons (slot.attach)
             if (car.g.userData.slotAt) {
               const slots = car.g.userData.slots;
@@ -346,8 +349,11 @@
           let car = null, bd = Infinity;
           for (const k of open) { const kx = k.g.position.x; if (this.allowed(c, kx) && Math.abs(kx - c.group.position.x) < bd) { bd = Math.abs(kx - c.group.position.x); car = k; } }
           if (!car) return null;
+          // Match empty container type to wagon type: bulk wagons (slotAt) need open-top bins, regular wagons need standard containers
+          const isBulkWagon = !!car.g.userData.slotAt;
+          const emptyFilter = (x) => this.isEmpty(x) && !x.reserved && (!!x.openTopBin === isBulkWagon);
           car.g.getWorldPosition(p);
-          const r = this.unstackLift(c, (x) => this.isEmpty(x) && !x.reserved, p.x, p.z, 1.45, (cont, m) => {
+          const r = this.unstackLift(c, emptyFilter, p.x, p.z, 1.45, (cont, m) => {
             // Place empty on wagon: handle bulk wagons (slotAt) and regular wagons (slot.attach)
             if (car.g.userData.slotAt) {
               const slots = car.g.userData.slots;
