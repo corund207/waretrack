@@ -17,6 +17,7 @@
       this.mesh = o.kind && o.kind !== 'container' ? M.cargoShip(o.kind) : M.ship(WT.pick([0x24336e, 0x1f4f6b, 0x3a2f6e, 0x7a2b3a]));
       if (!this.mesh.userData.stacks) this.mesh.userData.stacks = [];
       this.shipKind = o.kind || 'container';
+      this.scale = o.scale || 1;
       if (o.scale) this.mesh.scale.setScalar(o.scale);
       this.actor = new WT.Actor('ship', this.mesh, 'sea');
       this.actor.entity = this;
@@ -26,6 +27,23 @@
       this.moves = 0;
     }
     radius() { return 40; }
+    // Return the ship's world-space bounding box half-extents [halfLength, halfWidth] based on model and scale
+    getBounds() {
+      const s = this.mesh.scale.x || 1;
+      if (this.shipKind === 'container') {
+        // M.ship: hull from x=-44 to 46 (len 90), z=-7.5 to 7.5 (wid 15)
+        return { halfLen: 45 * s, halfWid: 7.5 * s };
+      } else {
+        // M.cargoShip: hull from x=-50 to 52 (len 102), z=-8 to 8 (wid 16)
+        return { halfLen: 51 * s, halfWid: 8 * s };
+      }
+    }
+    // Check if this ship's bounding box overlaps a given x-range at its current z
+    overlapsXRange(x0, x1) {
+      const b = this.getBounds();
+      const cx = this.actor.x;
+      return cx + b.halfLen > x0 && cx - b.halfLen < x1;
+    }
     teu() { return this.mesh.userData.stacks.reduce((n, s) => n + s.items.length, 0); }
     remove() { this.actor.remove(); WT.unregister(this); WT.ships.splice(WT.ships.indexOf(this), 1); }
     card() {
@@ -185,7 +203,7 @@
       super.activate();
       for (let i = 0; i < 3; i++) {
         const s = WT.pick(this.slots.filter((q) => q.items.length < 2));
-        const c = WT.SUP.newContainer(5.8);
+        const c = WT.SUP.newContainer(11);
         WT.SUP.note(c, 'Empty off an earlier vessel');
         c.mesh.position.set(s.x, s.items.length * 2.7, s.z);
         c.loc = this.id + ' · Quay stack';
@@ -214,13 +232,34 @@
     // or another vessel berthing nearby)
     approachClear(ship) {
       const A = this.A;
-      return WT.ships.every((o) => o === ship || o.status === 'Passing' || o.actor.z > 730 || o.actor.x < A - 30 || o.actor.x > A + 280 || (o.port === this && o === this.busy));
+      // Approach corridor: from entry (A+200) to berth (A+20), plus ship length margin
+      // Use each ship's actual scaled bounds for clearance
+      return WT.ships.every((o) => {
+        if (o === ship || o.status === 'Passing' || o.actor.z > 730) return true;
+        if (o.port === this && o === this.busy) return true;
+        const b = o.getBounds();
+        const ox = o.actor.x;
+        // Ship overlaps approach corridor if its bounds intersect [A-30, A+280]
+        // (extended by ship's half-length to be safe)
+        return !(ox + b.halfLen > A - 30 && ox - b.halfLen < A + 280);
+      });
     }
     departureClear(ship) {
       const A = this.A;
-      return WT.ships.every((o) => o === ship || o.status === 'Passing' || !o.mesh.visible || o.actor.z > 730 ||
-        (/Berthing|Inbound|To anchorage/.test(o.status) ? o.actor.x < A - 320 || o.actor.x > A + 80
-          : o.status === 'Sailing' ? o.actor.x < A - 260 || o.actor.x > A + 320 : true));
+      return WT.ships.every((o) => {
+        if (o === ship || o.status === 'Passing' || !o.mesh.visible || o.actor.z > 730) return true;
+        const b = o.getBounds();
+        const ox = o.actor.x;
+        if (/Berthing|Inbound|To anchorage/.test(o.status)) {
+          // Inbound/berthing ships occupy corridor from entry to berth
+          return !(ox + b.halfLen > A - 320 && ox - b.halfLen < A + 80);
+        }
+        if (o.status === 'Sailing') {
+          // Departing ships swing wide then head to outbound track
+          return !(ox + b.halfLen > A - 260 && ox - b.halfLen < A + 320);
+        }
+        return true;
+      });
     }
     *berthLoop() {
       yield* WT.sleep(WT.rnd(4, 12));
@@ -245,7 +284,7 @@
       const origin = WT.pick(['Rotterdam', 'Shanghai', 'Santos', 'Busan', 'Antwerp', 'Singapore']);
       ship.manifest = (ship.manifest || []).map((po) => {
         const st = stacks.filter((q) => q.items.length < 3).sort((p, q) => p.items.length - q.items.length || Math.abs(p.x) - Math.abs(q.x))[0];
-        const c = S.newContainer(5.8, po.mat);
+        const c = S.newContainer(11, po.mat);
         S.fillPO(c, po);
         ship.mesh.add(c.mesh);
         c.mesh.position.set(st.x, 3.8 + st.items.length * 2.75, st.z);
@@ -258,9 +297,10 @@
       });
       const sx0 = SEA.entryX(), ANC = { x: A + 230, z: SEA.anchor };
       const sea = { avoid: true, avoidGap: 160, avoidLat: 18, avoidMin: 110, onTick: () => wake(ship) };
-      // enter the track only with a clear gap to the vessel ahead
+      // enter the track only with a clear gap to the vessel ahead (use scaled bounds)
       ship.status = 'Awaiting entry';
-      yield* WT.waitFor(() => WT.ships.every((o) => o === ship || !o.mesh.visible || Math.abs(o.actor.z - SEA.inbound) > 25 || Math.abs(o.actor.x - sx0) > 240));
+      const entryGap = ship.getBounds().halfLen * 2 + 40; // ship length + margin
+      yield* WT.waitFor(() => WT.ships.every((o) => o === ship || !o.mesh.visible || Math.abs(o.actor.z - SEA.inbound) > 25 || Math.abs(o.actor.x - sx0) > entryGap));
       a.place(sx0, SEA.inbound, Math.PI);
       ship.mesh.visible = true;
       ship.status = 'Inbound';
@@ -278,7 +318,8 @@
       this.next = null;
       ship.status = 'Berthing';
       const tug = tugs(ship);
-      yield* WT.drive(a, [[a.x, a.z], [A + 150, 680], [A + 80, 628], [B.x, B.z]], Object.assign({ speed: 8, accel: 0.6, decel: 0.5, radius: 40, latAccel: 1.2 }, sea));
+      // swing in, then a straight final run along the quay line so she lies exactly parallel at the berth
+      yield* WT.drive(a, [[a.x, a.z], [A + 190, 676], [A + 115, B.z], [B.x, B.z]], Object.assign({ speed: 8, accel: 0.6, decel: 0.5, radius: 40, latAccel: 1.2 }, sea));
       tug.push = true;
       yield* WT.sleep(3.5);
       tug.leave = true;
@@ -353,7 +394,7 @@
       yield* WT.sleep(2.5);
       tug2.pull = false;
       let freed = false;
-      yield* WT.drive(a, [[B.x, B.z], [A - 30, 630], [A - 110, 660], [A - 190, SEA.outbound], [-W.EDGE - 300, SEA.outbound]], Object.assign({}, sea, {
+      yield* WT.drive(a, [[B.x, B.z], [A - 25, B.z], [A - 100, 646], [A - 190, SEA.outbound], [-W.EDGE - 300, SEA.outbound]], Object.assign({}, sea, {
         speed: 12, accel: 0.6, radius: 40, latAccel: 1.5,
         // the berth (and the approach) is free for the next vessel once we're clear of it
         onTick: () => { wake(ship); if (!freed && a.x < A - 70) { freed = true; tug2.leave = true; if (this.busy === ship) this.busy = null; } },

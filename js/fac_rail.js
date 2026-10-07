@@ -6,39 +6,63 @@
 
   /* ================= trains ================= */
   WT.trains = [];
+  // each railroad runs its own livery: body, stripe, locomotive style
+  const LIVERY = {
+    NorthRail: [0x2f56e0, 0xf6f7fd, 'hood'], 'Keystone Freight': [0xd9434b, 0x2b2f3d, 'hood'], 'Great Lakes RR': [0x1aa6b7, 0xf0b429, 'cab'],
+    'Coastline Rail': [0xf08c2a, 0x2b2f3d, 'hood'], 'Summit Pacific': [0x2b2f3d, 0xf0b429, 'cab'], 'Lakeshore Freight': [0x37b26c, 0xf6f7fd, 'hood'],
+    'Ridgeline Mining': [0x4a5578, 0xf0b429, 'hood'], 'Prairie Grain Rail': [0xc9a227, 0x37b26c, 'cab'], 'Silverbank Aggregates': [0xb9bfd8, 0x7a5cd6, 'hood'],
+    'Boxline Repositioning': [0x7a5cd6, 0xf6f7fd, 'cab'],
+  };
   let trainSeq = 310;
   class Train extends WT.Entity {
     constructor(o) {
       super();
       this.kind = 'train';
       this.id = 'RT-' + trainSeq++;
-      this.operator = WT.pick(['NorthRail', 'Keystone Freight', 'Great Lakes RR', 'Coastline Rail']);
+      this.operator = o.operator || WT.pick(['NorthRail', 'Keystone Freight', 'Great Lakes RR', 'Coastline Rail', 'Summit Pacific', 'Lakeshore Freight']);
       this.dest = o.terminal ? o.terminal.id : WT.pick(WT.RAIL_DEST);
       this.terminal = o.terminal || null;
       this.track = o.track || 'E';
       this.status = 'Approaching';
       this.cars = [];
-      const loco = M.loco(WT.pick([0x2f56e0, 0xd9434b, 0x1aa6b7, 0xf08c2a]));
+      const lv = LIVERY[this.operator] || [WT.pick([0x2f56e0, 0xd9434b, 0x1aa6b7, 0xf08c2a]), 0xf6f7fd, 'hood'];
+      const loco = M.loco(lv[0], lv[1], lv[2]);
       this.cars.push({ g: loco });
       const n = o.wagons || 6;
       this.manifest = o.manifest || [];
       const origin = WT.pick(WT.RAIL_DEST);
+      const bulkMat = o.bulkMat || null;
       for (let i = 0; i < n; i++) {
-        const kind = o.terminal ? 'container' : WT.pick(['container', 'container', 'tank', 'hopper', 'box']);
-        const w = M.wagonKind(kind);
-        let cont = null;
         const po = o.terminal ? this.manifest[i] : null;
-        if (po) {
-          cont = WT.SUP.newContainer(11, po.mat);
-          WT.SUP.fillPO(cont, po);
-          WT.SUP.note(cont, `Loaded at ${origin} ramp for ${po.to.id} (${po.id})`);
-          WT.SUP.ev(po, `On train · ${this.id} from ${origin}`);
-          po.vehicle = this;
-        } else if (!o.terminal && kind === 'container' && Math.random() < (o.fill === undefined ? 0.75 : o.fill)) {
-          // through traffic: mostly boxes, some open frames of raw material
-          const om = Math.random() < 0.3 ? WT.pick(['iron', 'ore', 'sand', 'fabric', 'glass']) : null;
-          cont = WT.SUP.newContainer(11, om);
-          if (om) cont.load.set(WT.rnd(0.6, 1));
+        let cont = null;
+        let w;
+        const isBulk = po ? (WT.bulkKinds && WT.bulkKinds.includes(po.mat)) : (bulkMat && WT.bulkKinds && WT.bulkKinds.includes(bulkMat));
+        if (isBulk) {
+          // bulk material (iron, coal, bauxite, sand, grain): use bulk wagon + open-top bin container
+          w = M.bulkWagon();
+          const mat = po ? po.mat : bulkMat;
+          if (po) {
+            cont = WT.SUP.newContainer(11, mat, true);
+            WT.SUP.fillPO(cont, po);
+            WT.SUP.note(cont, `Loaded at ${origin} ramp for ${po.to.id} (${po.id})`);
+            WT.SUP.ev(po, `On train · ${this.id} from ${origin}`);
+            po.vehicle = this;
+          }
+        } else {
+          const kind = o.terminal ? 'container' : WT.pick(['container', 'container', 'tank', 'hopper', 'box']);
+          w = M.wagonKind(kind);
+          if (po) {
+            cont = WT.SUP.newContainer(11, po.mat);
+            WT.SUP.fillPO(cont, po);
+            WT.SUP.note(cont, `Loaded at ${origin} ramp for ${po.to.id} (${po.id})`);
+            WT.SUP.ev(po, `On train · ${this.id} from ${origin}`);
+            po.vehicle = this;
+          } else if (!o.terminal && kind === 'container' && Math.random() < (o.fill === undefined ? 0.75 : o.fill)) {
+            // through traffic: mostly boxes, some open frames of raw material
+            const om = Math.random() < 0.3 ? WT.pick(['iron', 'ore', 'sand', 'fabric', 'glass']) : null;
+            cont = WT.SUP.newContainer(11, om);
+            if (om) cont.load.set(WT.rnd(0.6, 1));
+          }
         }
         if (cont) { cont.status = 'On rail'; w.userData.slot.add(cont.mesh); }
         this.cars.push({ g: w, cont });
@@ -233,6 +257,7 @@
       WT.emit('event', { kind: 'train', ent: tr, weight: 3 });
       const sh = WT.createShipment({ mode: 'rail', to: WT.pick(WT.RAIL_DEST), carrier: tr.operator, vehicle: tr, total: 3, transit: WT.rint(240, 600) });
       tr.shipment = sh;
+      if (tr.empties) { yield* this.loadEmpties(tr, sh); return; }
       // pre-advice: the moment the train is in, every booked box is released to drayage, so trucks are already
       // rolling while the cranes work; a truck that beats the discharge gets its box straight off the wagon
       for (const car of tr.cars.slice(1)) {
@@ -279,7 +304,19 @@
           if (!car) return null;
           car.g.getWorldPosition(p);
           const r = this.unstackLift(c, (x) => this.isFullExport(x) && !x.reserved, p.x, p.z, 1.45, (cont, m) => {
-            car.g.userData.slot.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
+            // Place export container on wagon: handle bulk wagons (slotAt) and regular wagons (slot.attach)
+            if (car.g.userData.slotAt) {
+              const slots = car.g.userData.slots;
+              let slot = null;
+              for (const s of slots) {
+                if (!s.userData.occupied) { slot = s; break; }
+              }
+              if (!slot) return 'skip';
+              m.position.set(slot.position.x, slot.position.y, slot.position.z);
+              car.g.add(m);
+            } else {
+              car.g.userData.slot.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
+            }
             car.cont = cont; cont.status = 'On rail'; cont.loc = tr.id;
             loaded++; sh.loaded = loaded;
             WT.SUP.note(cont, `Loaded on ${tr.id} → ${sh.to}`);
@@ -291,6 +328,45 @@
       }));
       yield* this.waitJobs(load);
       sh.total = Math.max(1, loaded);
+      WT.advanceShipment(sh, 3);
+      this.busy = null;
+      yield* WT.sleep(1);
+    }
+    // repositioning train: both cranes load every empty in the yard (up to the wagons) for the off-site empty yard
+    *loadEmpties(tr, sh) {
+      tr.status = 'Loading empties';
+      const p = new T.Vector3();
+      const cars = tr.cars.slice(1);
+      const n = Math.min(cars.length, this.emptyCount());
+      const jobs = Array.from({ length: n }, () => this.addJob({
+        label: 'Loading empties ' + tr.id,
+        plan: (c) => {
+          const open = cars.filter((k) => !k.cont && !k.claimed);
+          if (!open.length) return 'skip';
+          let car = null, bd = Infinity;
+          for (const k of open) { const kx = k.g.position.x; if (this.allowed(c, kx) && Math.abs(kx - c.group.position.x) < bd) { bd = Math.abs(kx - c.group.position.x); car = k; } }
+          if (!car) return null;
+          car.g.getWorldPosition(p);
+          const r = this.unstackLift(c, (x) => this.isEmpty(x) && !x.reserved, p.x, p.z, 1.45, (cont, m) => {
+            // Place empty on wagon: handle bulk wagons (slotAt) and regular wagons (slot.attach)
+            if (car.g.userData.slotAt) {
+              const slots = car.g.userData.slots;
+              const slot = slots[0]; // use first slot for empties (simplified)
+              m.position.set(slot.position.x, slot.position.y, slot.position.z);
+              car.g.add(m);
+            } else {
+              car.g.userData.slot.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
+            }
+            car.cont = cont; cont.status = 'Empty · on rail'; cont.loc = tr.id;
+            WT.SUP.note(cont, `Loaded on ${tr.id} for off-site repositioning`);
+            sh.loaded++;
+          });
+          if (r && r !== 'skip') r.onTake = () => { car.claimed = true; };
+          return r;
+        },
+      }));
+      yield* this.waitJobs(jobs);
+      sh.total = Math.max(1, sh.loaded);
       WT.advanceShipment(sh, 3);
       this.busy = null;
       yield* WT.sleep(1);
@@ -309,20 +385,53 @@
   WT.startRail = function () {
     WT.spawn((function* () {
       yield* WT.waitFor(() => W.railBuilt);
+      let lastRemote = null;
       while (true) {
-        const terms = WT.facilities.filter((f) => f.type === 'Rail terminal' && f.active && !f.busy && f.stackRoom() > 4);
-        const S = WT.SUP;
-        // a train is only routed into a terminal when there is booked freight or exports to lift
-        if (terms.length && (S.backlog.rail.length || terms.some((t) => t.exportCount() >= 2))) {
-          const term = terms.sort((a, b) => b.exportCount() - a.exportCount())[0];
-          term.busy = 'incoming';
-          const manifest = S.takeManifest('rail', 6);
-          const tr = new Train({ terminal: term, wagons: 6, manifest });
-          WT.spawn(runTrain(tr));
-        } else {
-          const tr = new Train({ track: Math.random() < 0.5 ? 'E' : 'W', wagons: WT.rint(6, 10), fill: 0.9 });
-          tr.status = 'Through freight';
-          WT.spawn(runTrain(tr));
+        try {
+          const terms = WT.facilities.filter((f) => f.type === 'Rail terminal' && f.active && !f.busy && f.stackRoom() > 4);
+          const S = WT.SUP;
+          const R = WT.REMOTE;
+          // Remote mine/empty trains (only if remote facilities exist)
+          if (R && terms.length) {
+            const yard = WT.facilities.find((f) => f.type === 'Off-site empty yard' && f.active && !f.trainBusy);
+            const et = yard && terms.find((t) => t.emptyCount() >= 3);
+            if (et && lastRemote !== 'empty') { R.emptyTrain(et, yard); lastRemote = 'empty'; yield* WT.sleep(WT.rnd(8, 16)); continue; }
+            const factory = R.containerFactory && R.containerFactory();
+            const site = factory && !factory.trainBusy && WT.facilities.find((f) => f.remote && f.active && !f.trainBusy && factory.available(f.mat) > 0 && S.backlog.rail.some((po) => po.mat === f.mat));
+            if (site) {
+              const manifest = S.takeManifest('rail', Math.min(6, factory.available(site.mat)), (po) => po.mat === site.mat);
+              const term = terms.sort((a, b) => b.stackRoom() - a.stackRoom())[0];
+              R.mineTrain(site, term, manifest);
+              lastRemote = 'mine';
+              yield* WT.sleep(WT.rnd(8, 16));
+              continue;
+            }
+            if (et) { R.emptyTrain(et, yard); lastRemote = 'empty'; yield* WT.sleep(WT.rnd(8, 16)); continue; }
+          }
+          // Terminal trains (booked freight or exports)
+          const general = S.backlog.rail.filter((po) => !(R && R.siteFor && R.siteFor(po.mat)));
+          if (terms.length && (general.length || terms.some((t) => t.exportCount() >= 2))) {
+            const term = terms.sort((a, b) => b.exportCount() - a.exportCount())[0];
+            term.busy = 'incoming';
+            const manifest = S.takeManifest('rail', 6, (po) => !(R && R.siteFor && R.siteFor(po.mat)));
+            const tr = new Train({ terminal: term, wagons: 6, manifest });
+            WT.spawn(runTrain(tr));
+          } else {
+            // Through freight - always spawn these to keep the mainline alive
+            const tr = new Train({ track: Math.random() < 0.5 ? 'E' : 'W', wagons: WT.rint(6, 10), fill: 0.9 });
+            tr.status = 'Through freight';
+            WT.spawn(runTrain(tr));
+          }
+        } catch (e) {
+          console.error('[Rail] Spawn error:', e);
+          // Fallback: spawn a through freight train to keep things moving
+          try {
+            const tr = new Train({ track: Math.random() < 0.5 ? 'E' : 'W', wagons: WT.rint(6, 10), fill: 0.9 });
+            tr.status = 'Through freight (fallback)';
+            WT.spawn(runTrain(tr));
+          } catch (e2) {
+            console.error('[Rail] Fallback spawn failed:', e2);
+          }
         }
         yield* WT.sleep(WT.rnd(12, 24));
       }
