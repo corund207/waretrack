@@ -111,7 +111,7 @@
         ctx.fillStyle = '#ffffff'; M.hexPath(ctx, 128, 128, 26); ctx.fill();
       });
       for (const [x, z, r] of [[51.6, 0, -Math.PI / 2], [72.4, 0, Math.PI / 2], [62, 11.4, 0], [62, -11.4, Math.PI]]) {
-        const d = new T.Mesh(new T.PlaneGeometry(10, 10), new T.MeshLambertMaterial({ map: tex, transparent: true }));
+        const d = new T.Mesh(new T.PlaneGeometry(10, 10), new T.MeshStandardMaterial({ map: tex, transparent: true }));
         d.position.set(x, 50, z);
         d.rotation.y = r;
         this.structure.add(d);

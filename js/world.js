@@ -26,7 +26,7 @@
   W.flat = function (parent, w, d, color, x, z, y = 0.02) {
     const geo = new T.PlaneGeometry(w, d);
     geo.rotateX(-Math.PI / 2);
-    const m = new T.Mesh(geo, M.mat(color));
+    const m = new T.Mesh(geo, M.mat(color, { surface: true }));
     m.position.set(x, y, z);
     m.receiveShadow = true;
     parent.add(m);
@@ -69,7 +69,7 @@
     });
     const geo = new T.PlaneGeometry(w, h);
     geo.rotateX(-Math.PI / 2);
-    const m = new T.Mesh(geo, new T.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
+    const m = new T.Mesh(geo, new T.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false }));
     m.position.set(x, 0.07, z);
     m.rotation.y = rot;
     parent.add(m);
@@ -361,7 +361,7 @@
 
   /* ---------- base world ---------- */
   W.build = function (scene) {
-    W.flat(scene, 7000, 7000, COL.ground, 0, 0, 0);
+    W.flat(scene, 40000, 40000, COL.ground, 0, 0, 0);
     W.flat(scene, (W.EDGE + 400) * 2, 16, COL.road, 0, 0, 0.03);
     const d = [];
     for (const z of [-0.25, 0.25]) W.dashLine(d, -W.EDGE - 400, z, W.EDGE + 400, z, 4200, 0, 0.16);
@@ -372,12 +372,12 @@
     W.dashLine(e, -W.EDGE - 400, 7.6, W.EDGE + 400, 7.6, 4200, 0, 0.22);
     W.dashes(scene, e, COL.mark, 0.055);
     // coast
-    W.flat(scene, 7000, 10, 0xdfe2f2, 0, W.SEA_Z - 3, 0.026);
-    W.flat(scene, 7000, 1600, COL.water, 0, W.SEA_Z + 800, 0.04);
+    W.flat(scene, 40000, 10, 0xdfe2f2, 0, W.SEA_Z - 3, 0.026);
+    W.flat(scene, 40000, 20000, COL.water, 0, W.SEA_Z + 10000, 0.04);
     W.ripples = [];
     const rg = new T.PlaneGeometry(1, 1);
     rg.rotateX(-Math.PI / 2);
-    const rm = (W.rippleMat = new T.MeshBasicMaterial({ color: 0xd6e5fb, transparent: true, opacity: 0.8 }));
+    const rm = (W.rippleMat = new T.MeshBasicMaterial({ color: 0xe8f0f6, transparent: true, opacity: 0.22, depthWrite: false }));
     for (let i = 0; i < 240; i++) {
       const r = new T.Mesh(rg, rm);
       r.scale.set(WT.rnd(3, 10), 1, 0.4);
@@ -402,7 +402,7 @@
     const sb = new M.MB();
     sb.box(0.5, 6.5, 0.5, 0x9aa1c4, -5.5, 0, 0); sb.box(0.5, 6.5, 0.5, 0x9aa1c4, 5.5, 0, 0);
     sg.add(sb.mesh());
-    const panel = new T.Mesh(new T.PlaneGeometry(13, 4), new T.MeshLambertMaterial({ map: sign }));
+    const panel = new T.Mesh(new T.PlaneGeometry(13, 4), new T.MeshStandardMaterial({ map: sign }));
     panel.position.set(0, 7.5, 0.3);
     sg.add(panel);
     sg.position.set(-40, 0, 17);

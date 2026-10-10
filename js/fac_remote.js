@@ -305,7 +305,7 @@
       const from = kind === 'Grain farm' ? [x - 6, 4, -712] : [x - 2, 4, -742];
       this.belt = new FX.Conveyor(g, [from, [x - 2, 9, BR - 10], [x, 12, BR - 3.4]], { item: mat.item || 'ore', speed: 4, spacing: 1.4, colors: mat.colors });
       // run-of-mine stockpile next to the loadout
-      this.pile = new T.Mesh(new T.ConeGeometry(13, 9, 14), new T.MeshLambertMaterial({ color: col, flatShading: true }));
+      this.pile = new T.Mesh(new T.ConeGeometry(13, 9, 14), new T.MeshStandardMaterial({ color: col, flatShading: true }));
       this.pile.position.set(x + 30, 0, -734);
       this.pile.castShadow = this.pile.receiveShadow = true;
       S.add(this.pile);

@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A logistics park that builds and runs itself. Sit back and watch.</b><br/>
-  Road, rail, sea and air freight feeding a live, multi-stage supply chain, rendered in isometric 3D in the browser.
+  Road, rail, sea and air freight feeding a live, multi-stage supply chain, rendered as a lifelike 3D world in the browser.
 </p>
 
 <p align="center">
@@ -203,15 +203,19 @@ street-turned empties, a container depot, and long lead times for sea freight th
   berthing. Between events it follows trucks, shows factory belts and gives slow orbits and overviews. Any mouse or
   keyboard input hands you control, and it resumes after 30 s.
 - **Cinema mode** (**U**) hides the dashboard and leaves a slim status ticker.
-- **Dark mode** (**N**, or the moon button in the map toolbar) switches the dashboard and the park to a moonlit
-  palette. It follows your system setting until you pick one, then remembers your choice.
+- **Dark mode** (**N**, or the moon button in the map toolbar) switches the dashboard to dark and the park to night:
+  a moonlit sky, with street lamps, headlights and office windows lit. It follows your system setting until you
+  pick one, then remembers your choice.
 - Click anything for its live detail card, and use **Follow** to ride along with a vehicle.
-- Drag to pan, scroll to zoom, right-drag or **Q/E** to rotate, **H** home, **/** search, **Space** pause, **1–4** set speed.
+- Drag to pan, scroll to zoom, right-drag or **Q/E** to rotate, right-drag up/down or **R/F** to tilt (down to the
+  horizon), **H** home, **/** search, **Space** pause, **1–4** set speed.
 
 ## Code map
 
 - `js/core.js`: sim clock, coroutines, path following, traffic yielding
-- `js/models.js`, `js/models_ext.js`: low-poly models (merged vertex-coloured geometry)
+- `js/look.js`: the lifelike look: physically based materials, real-world palette, procedural grass, asphalt,
+  concrete, gravel and water, sky dome with sun, haze and clouds, image-based lighting, night lights
+- `js/models.js`, `js/models_ext.js`: models (merged vertex-coloured geometry with chamfered edges)
 - `js/world.js`: terrain, highway, coast, instanced forest, plot grid, avenue paving, rail line, road router, pylons
 - `js/fx.js`: smoke, steam and dust particles, and instanced conveyor belts
 - `js/fac_*.js`: facilities (warehouse, factory, rail, port, airport, depot and truck stop, misc)

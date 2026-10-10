@@ -127,11 +127,23 @@
   WT.Facility = Facility;
 
   /* ---------- shared building kit ---------- */
+  // profiled steel cladding: ribs with a lit edge and a shaded edge, faint weathering streaks
+  const realCss = (c) => '#' + M.real(parseInt(String(c).replace('#', ''), 16)).toString(16).padStart(6, '0');
   function corrugTex(color, dark) {
-    return M.canvasTex(64, 64, (ctx) => {
-      ctx.fillStyle = color; ctx.fillRect(0, 0, 64, 64);
-      ctx.fillStyle = dark;
-      for (let x = 0; x < 64; x += 8) ctx.fillRect(x, 0, 3, 64);
+    color = realCss(color); dark = realCss(dark);
+    return M.canvasTex(64, 128, (ctx) => {
+      ctx.fillStyle = color; ctx.fillRect(0, 0, 64, 128);
+      for (let x = 0; x < 64; x += 8) {
+        ctx.fillStyle = dark; ctx.fillRect(x, 0, 3, 128);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x + 3, 0, 1, 128);
+        ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(x + 7, 0, 1, 128);
+      }
+      let r = 7; const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647); // local: visuals don't touch the sim's random stream
+      for (let i = 0; i < 10; i++) {
+        const gr = ctx.createLinearGradient(0, 0, 0, 128);
+        gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(40,36,30,0.10)');
+        ctx.fillStyle = gr; ctx.fillRect(rnd() * 64, 0, 2 + rnd() * 6, 128);
+      }
     });
   }
   const texCache = {};
@@ -142,7 +154,7 @@
     t.needsUpdate = true;
     t.wrapS = t.wrapT = T.RepeatWrapping;
     t.repeat.set(rep, 1);
-    return new T.MeshLambertMaterial({ map: t });
+    return new T.MeshStandardMaterial({ map: t });
   }
   function wallPiece(parent, w, h, d, x, y, z, along, colors) {
     const m = new T.Mesh(new T.BoxGeometry(w, h, d), wallMat(colors[0], colors[1], (along === 'x' ? w : d) / 3));
@@ -229,6 +241,12 @@
     }
     b.box(w + 0.2, 0.6, 0.8, 0x2140b8, cx, h - 0.6, z1 + 0.1);
     b.box(w + 0.2, 0.4, 0.4, 0x8ea6ff, cx, 0, z1 + 0.25);
+    // concrete plinth and a gutter line along the closed walls
+    b.box(w + 0.3, 0.9, 0.2, 0x8a8984, cx, 0, z0 - 0.05);
+    b.box(0.2, 0.9, d + 0.3, 0x8a8984, x0 - 0.05, 0, cz);
+    b.box(0.2, 0.9, d + 0.3, 0x8a8984, x1 + 0.05, 0, cz);
+    b.box(w + 0.6, 0.3, 0.3, 0x9c9fa6, cx, h - 0.3, z0 - 0.15);
+    for (const dx of [x0 + 0.4, x1 - 0.4]) b.cyl(0.12, 0.12, h - 0.3, 0x9c9fa6, dx, (h - 0.3) / 2, z0 - 0.25, 8);
     if (o.extra) o.extra(b);
     g.add(b.mesh());
     if (o.sign) {
@@ -249,7 +267,7 @@
         ctx.fillStyle = '#2f56e0'; M.hexPath(ctx, 128, 128, 60); ctx.fill();
         ctx.fillStyle = '#ffffff'; M.hexPath(ctx, 128, 128, 26); ctx.fill();
       });
-      const lm = new T.Mesh(new T.PlaneGeometry(7, 7), new T.MeshLambertMaterial({ map: tex, transparent: true }));
+      const lm = new T.Mesh(new T.PlaneGeometry(7, 7), new T.MeshStandardMaterial({ map: tex, transparent: true }));
       const slope = Math.atan2(rise, d / 2 + 0.8);
       lm.rotation.set(-Math.PI / 2 + slope, 0, 0);
       lm.position.set(cx, h + rise * 0.5 + 0.25, cz + d / 4);

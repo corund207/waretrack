@@ -226,7 +226,8 @@
     const reach = reachOf(f);
     if (reach) { p.stage = 'Paving access road'; yield* W.extendAvenue(...reach); }
     p.stage = 'Clearing site';
-    W.clearTrees(f.bounds());
+    // the plot plus a verge: rigs swing their tails a few metres past the gate lanes
+    { const b = f.bounds(); W.clearTrees({ x0: b.x0 - 6, x1: b.x1 + 6, z0: b.z0 - 6, z1: b.z1 + 6 }); }
     f.build();
     const S = f.structure, sweep = f.mode === 'sweep';
     if (sweep) S.scale.x = 0.001; else S.scale.y = 0.001;

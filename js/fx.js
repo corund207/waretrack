@@ -16,7 +16,7 @@
     if (FX.live.length >= MAX) return;
     const s = FX.pool.pop() || sprite();
     s.visible = true;
-    s.material.color.set(o.color === undefined ? 0xffffff : o.color);
+    s.material.color.set(o.color === undefined ? 0xffffff : o.color).multiplyScalar(WT.LOOK.puffShade);
     s.position.set(x, y, z);
     FX.live.push({
       s, t: 0, life: o.life || 4, s0: o.size0 || 2, s1: o.size1 || 8, op: o.op === undefined ? 0.7 : o.op,
@@ -65,8 +65,8 @@
     log: { geo: new T.CylinderGeometry(0.35, 0.35, 2.2, 8).rotateZ(Math.PI / 2), y: 0.36 },
     plank: { geo: new T.BoxGeometry(1.6, 0.18, 0.7), y: 0.1 },
   };
-  const itemMat = new T.MeshLambertMaterial({ color: 0xffffff });
-  const glowMat = new T.MeshLambertMaterial({ color: 0xffffff, emissive: 0x7a2a00 });
+  const itemMat = new T.MeshStandardMaterial({ color: 0xffffff });
+  const glowMat = new T.MeshStandardMaterial({ color: 0xffffff, emissive: 0x7a2a00 });
   const _m = new T.Matrix4(), _q = new T.Quaternion(), _s = new T.Vector3(1, 1, 1), _p = new T.Vector3(), _c = new T.Color(), _up = new T.Vector3(0, 1, 0);
 
   class Conveyor {
@@ -164,7 +164,7 @@
   // one piece of cargo swung between a truck bed and a belt (or back), on a short lifting arc
   FX.hop = function* (from, to, color, dur = 0.42, item = 'carton') {
     const kind = ITEM[item] || ITEM.carton;
-    const m = new T.Mesh(kind.geo, new T.MeshLambertMaterial({ color: color === undefined ? 0xcf9d62 : color }));
+    const m = new T.Mesh(kind.geo, new T.MeshStandardMaterial({ color: color === undefined ? 0xcf9d62 : color }));
     m.castShadow = true;
     m.userData.fx = true; // transient effect, not scenery
     WT.scene.add(m);
@@ -198,7 +198,7 @@
       parent.add(this.g);
       this.frac = -1;
       if (this.kind === 'heap') {
-        this.mesh = new T.Mesh(new T.ConeGeometry(4.2, 4.2, 10), new T.MeshLambertMaterial({ color: this.color }));
+        this.mesh = new T.Mesh(new T.ConeGeometry(4.2, 4.2, 10), new T.MeshStandardMaterial({ color: this.color }));
         this.mesh.castShadow = this.mesh.receiveShadow = true;
         this.g.add(this.mesh);
         const bin = new M.MB();
@@ -210,17 +210,17 @@
         for (let i = 0; i < 4; i++) b.box(0.3, 9.6, 0.3, 0x9aa1c4, Math.cos(i * 1.57) * 3.3, 0, Math.sin(i * 1.57) * 3.3);
         b.cyl(3.45, 3.45, 0.3, 0x9aa1c4, 0, 9.6, 0, 18);
         this.g.add(b.mesh());
-        this.shell = new T.Mesh(new T.CylinderGeometry(3.2, 3.2, 9, 18, 1, true), new T.MeshLambertMaterial({ color: 0xdfe5f5, transparent: true, opacity: 0.35, side: T.DoubleSide, depthWrite: false }));
+        this.shell = new T.Mesh(new T.CylinderGeometry(3.2, 3.2, 9, 18, 1, true), new T.MeshStandardMaterial({ color: 0xdfe5f5, transparent: true, opacity: 0.35, side: T.DoubleSide, depthWrite: false }));
         this.shell.position.y = 4.9;
         this.g.add(this.shell);
-        this.level = new T.Mesh(new T.CylinderGeometry(3.05, 3.05, 1, 18), new T.MeshLambertMaterial({ color: mat === 'syrup' ? 0xb5543d : mat === 'chem' ? 0x8fd476 : 0xe9ecf7 }));
+        this.level = new T.Mesh(new T.CylinderGeometry(3.05, 3.05, 1, 18), new T.MeshStandardMaterial({ color: mat === 'syrup' ? 0xb5543d : mat === 'chem' ? 0x8fd476 : 0xe9ecf7 }));
         this.g.add(this.level);
       } else {
         const sp = SP[this.kind];
         this.sp = sp;
         this.grid = grid;
         this.cap = grid[0] * grid[1] * grid[2];
-        this.im = new T.InstancedMesh(sp.geo, new T.MeshLambertMaterial({ color: this.kind === 'crates' ? 0xc89b63 : this.color }), this.cap);
+        this.im = new T.InstancedMesh(sp.geo, new T.MeshStandardMaterial({ color: this.kind === 'crates' ? 0xc89b63 : this.color }), this.cap);
         this.im.castShadow = this.im.receiveShadow = true;
         this.im.count = 0;
         this.g.add(this.im);

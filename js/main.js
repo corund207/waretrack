@@ -1,4 +1,4 @@
-/* WareTrack – renderer, isometric camera, picking, overlays, main loop */
+/* WareTrack – renderer, perspective orbit camera, sky, picking, overlays, main loop */
 (function () {
   const T = THREE;
   const canvas = document.getElementById('scene');
@@ -8,52 +8,94 @@
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false;
-  renderer.setClearColor(0xe8ebfa);
+  renderer.outputEncoding = T.sRGBEncoding;
+  renderer.toneMapping = T.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  const LK = WT.LOOK;
 
   const scene = (WT.scene = new T.Scene());
-  const hemi = new T.HemisphereLight(0xffffff, 0xb4bbe0, 0.74);
+  const hemi = new T.HemisphereLight(0xcfe0ff, 0x4a4234, 0.25);
   scene.add(hemi);
-  const sun = new T.DirectionalLight(0xffffff, 0.5);
-  WT.lights = { hemi, sun }; // theme.js retunes these for dark mode
+  const sun = new T.DirectionalLight(0xfff1dc, 2.6);
+  WT.lights = { hemi, sun }; // theme.js retunes these for night
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.05;
+  sun.shadow.bias = -0.0003;
+  sun.shadow.normalBias = 0.04;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 1600;
+  sun.shadow.camera.far = 2600;
   scene.add(sun, sun.target);
-  const SUN_DIR = new T.Vector3(-50, 110, 60).normalize();
+  const SUN_DIR = (WT.SUN_DIR = new T.Vector3(-50, 62, 60).normalize());
+  scene.fog = new T.Fog(0xc5d6e4, 400, 4000);
+
+  /* ---------- sky + image-based lighting ---------- */
+  const skyGeo = new T.SphereGeometry(1, 48, 24);
+  const sky = new T.Mesh(skyGeo, LK.skyMaterial());
+  sky.renderOrder = -1000;
+  sky.frustumCulled = false;
+  scene.add(sky);
+  const pmrem = new T.PMREMGenerator(renderer);
+  const envScene = new T.Scene();
+  const envSky = new T.Mesh(skyGeo, LK.skyMaterial());
+  envSky.scale.setScalar(50);
+  envScene.add(envSky);
+  let envRT = null;
+  // look: LK.SKY.day | night — repaints the sky and re-bakes the light it casts on everything
+  WT.setSky = (look) => {
+    LK.setSky(sky.material, look, SUN_DIR);
+    LK.setSky(envSky.material, look, SUN_DIR);
+    scene.fog.color.setHex(look.haze);
+    renderer.setClearColor(look.haze);
+    const rt = pmrem.fromScene(envScene, 0, 0.1, 100);
+    scene.environment = rt.texture;
+    if (envRT) envRT.dispose();
+    envRT = rt;
+  };
+  WT.setSky(LK.SKY.day);
 
   /* ---------- camera ---------- */
-  const cam = (WT.camera = new T.OrthographicCamera(-1, 1, 1, -1, 1, 8000));
-  const HOME = { tx: -40, tz: -70, size: 300, yaw: Math.PI / 4, pitch: 0.62 };
+  // a perspective camera orbiting a ground target: view.size is the height of ground framed at the target
+  const FOV = 34, TANH = Math.tan((FOV * Math.PI) / 360);
+  const cam = (WT.camera = new T.PerspectiveCamera(FOV, 1, 1, 10000));
+  const HOME = { tx: -40, tz: -70, size: 300, yaw: Math.PI / 4, pitch: 0.58 };
   const view = (WT.view = Object.assign({}, HOME));
   const goal = Object.assign({}, HOME);
   WT.follow = null;
   let shadowSize = 0;
+  const PITCH_MIN = 0.12, PITCH_MAX = 1.45;
 
   function applyCamera() {
     const w = canvas.clientWidth, h = canvas.clientHeight, aspect = w / Math.max(1, h);
-    const d = 2400, cp = Math.cos(view.pitch);
+    const d = view.size / 2 / TANH, cp = Math.cos(view.pitch);
+    cam.aspect = aspect;
     cam.position.set(view.tx + d * cp * Math.sin(view.yaw), d * Math.sin(view.pitch), view.tz + d * cp * Math.cos(view.yaw));
+    if (cam.position.y < 1.6) cam.position.y = 1.6;
     cam.lookAt(view.tx, 0, view.tz);
-    cam.left = (-view.size * aspect) / 2; cam.right = (view.size * aspect) / 2;
-    cam.top = view.size / 2; cam.bottom = -view.size / 2;
+    cam.near = Math.max(0.3, d * 0.02);
+    cam.far = d * 6 + 9000;
     cam.updateProjectionMatrix();
-    const ss = WT.clamp(view.size * aspect * 0.62, 80, 760);
+    sky.position.copy(cam.position);
+    sky.scale.setScalar(cam.far * 0.9);
+    scene.fog.near = d * 0.8 + 250;
+    scene.fog.far = d * 3.2 + 3800;
+    // shadows cover the framed ground, reaching further out the lower the camera looks
+    const ss = WT.clamp((view.size * aspect * 0.7) / Math.max(0.45, Math.sin(view.pitch)), 80, 1100);
     if (Math.abs(ss - shadowSize) > ss * 0.06) {
       shadowSize = ss;
       const c = sun.shadow.camera;
       c.left = -ss; c.right = ss; c.top = ss; c.bottom = -ss;
       c.updateProjectionMatrix();
     }
-    sun.target.position.set(view.tx, 0, view.tz);
-    sun.position.set(view.tx + SUN_DIR.x * 700, SUN_DIR.y * 700, view.tz + SUN_DIR.z * 700);
+    // centre the shadow box a little beyond the target, where a perspective view shows more ground
+    const fx = -Math.sin(view.yaw), fz = -Math.cos(view.yaw), ahead = ss * 0.3 * Math.cos(view.pitch);
+    const sx = view.tx + fx * ahead, sz = view.tz + fz * ahead;
+    sun.target.position.set(sx, 0, sz);
+    sun.position.set(sx + SUN_DIR.x * 1200, SUN_DIR.y * 1200, sz + SUN_DIR.z * 1200);
   }
   WT.camGoal = (o) => {
     if (o.x !== undefined) { goal.tx = o.x; goal.tz = o.z; }
     if (o.size) goal.size = WT.clamp(o.size, 22, 1600);
-    if (o.pitch) goal.pitch = o.pitch;
+    if (o.pitch) goal.pitch = WT.clamp(o.pitch, PITCH_MIN, PITCH_MAX);
     if (o.yaw !== undefined) goal.yaw = goal.yaw + WT.angDiff(goal.yaw, o.yaw);
     if (o.yawDelta) goal.yaw += o.yawDelta;
   };
@@ -120,11 +162,11 @@
       if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) drag.moved = true;
       if (!drag.moved) return;
       manual();
-      if (drag.rotate) { goal.yaw = view.yaw -= dx * 0.006; return; }
+      if (drag.rotate) { goal.yaw = view.yaw -= dx * 0.006; goal.pitch = view.pitch = WT.clamp(view.pitch + dy * 0.004, PITCH_MIN, PITCH_MAX); return; }
       WT.follow = null;
       const wpp = view.size / canvas.clientHeight;
       const rx = Math.cos(view.yaw), rz = -Math.sin(view.yaw), fx = -Math.sin(view.yaw), fz = -Math.cos(view.yaw);
-      const k = 1 / Math.sin(view.pitch);
+      const k = 1 / Math.max(0.25, Math.sin(view.pitch));
       view.tx += -rx * dx * wpp + fx * dy * wpp * k;
       view.tz += -rz * dx * wpp + fz * dy * wpp * k;
       goal.tx = view.tx; goal.tz = view.tz;
@@ -176,6 +218,8 @@
     if (k === 'escape') WT.select(null);
     if (k === 'q') WT.rotate(-1);
     if (k === 'e') WT.rotate(1);
+    if (k === 'r') { manual(); goal.pitch = WT.clamp(goal.pitch + 0.12, PITCH_MIN, PITCH_MAX); }
+    if (k === 'f') { manual(); goal.pitch = WT.clamp(goal.pitch - 0.12, PITCH_MIN, PITCH_MAX); }
     if (k === '+' || k === '=') WT.zoomBy(0.8);
     if (k === '-' || k === '_') WT.zoomBy(1.25);
     if (k === 'h') WT.home();
@@ -352,6 +396,7 @@
     const t = nowMs / 1000;
     WT.emit('frame', t);
     WT.FX.update(WT.sim.dt);
+    LK.time.value = t;
     WT.Cinema.update(realDt);
     keyPan(realDt);
     const cine = WT.Cinema.active();

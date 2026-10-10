@@ -4,11 +4,21 @@
 
   /* ================= road vehicles ================= */
   const CHROME = 0xc7cde3, GLASS = 0x26305e, DARK = 0x2a2f4a;
+  // a road wheel: tyre with a rounded shoulder, steel rim, hub and wheel nuts
+  M.wheel = (b, x, y, z, r, wd = 0.55) => {
+    const side = Math.sign(z) || 1;
+    b.cyl(r, r, wd, P.tire, x, y, z, 18, Math.PI / 2);
+    b.cyl(r * 0.94, r * 0.94, wd + 0.06, 0x2c2e33, x, y, z, 18, Math.PI / 2);
+    b.cyl(r * 0.6, r * 0.6, wd + 0.08, 0xb7bbc2, x, y, z, 16, Math.PI / 2);
+    b.cyl(r * 0.45, r * 0.5, wd + 0.1, 0x8d9199, x, y, z + side * 0.01, 16, Math.PI / 2);
+    b.cyl(r * 0.2, r * 0.2, wd + 0.16, 0x5c6068, x, y, z, 10, Math.PI / 2);
+  };
   function wheels(b, xs, w = 1.2, r = 0.6) {
-    for (const wx of xs) for (const wz of [-w, w]) {
-      b.cyl(r, r, 0.55, P.tire, wx, r, wz, 12, Math.PI / 2);
-      b.cyl(r * 0.5, r * 0.5, 0.58, P.hub, wx, r, wz, 8, Math.PI / 2);
-    }
+    for (const wx of xs) for (const wz of [-w, w]) M.wheel(b, wx, r, wz, r);
+  }
+  // mudguards over a pair of axles
+  function guards(b, x0, x1, w = 1.2, y = 1.3) {
+    for (const z of [-w, w]) b.box(x1 - x0 + 1.4, 0.1, 0.65, DARK, (x0 + x1) / 2, y, z);
   }
   // tractor cab + front steer axle (drive axles are added by the rig under the fifth wheel)
   function cab(b, style, color) {
@@ -22,6 +32,9 @@
       b.box(0.3, 0.4, 2.9, DARK, 7.5, 0.55, 0);
       for (const z of [-1.0, 1.0]) b.box(0.1, 0.3, 0.45, 0xfff1b8, 7.45, 1.7, z);
       for (const z of [-1.45, 1.45]) b.cyl(0.12, 0.12, 3.2, CHROME, 3.2, 3.6, z, 8);
+      for (const z of [-1.75, 1.75]) b.box(0.14, 0.75, 0.22, DARK, 5.2, 2.6, z);
+      for (const z of [-1.55, 1.55]) b.cyl(0.42, 0.42, 1.4, CHROME, 2.4, 0.95, z * 0.85, 14, 0, 0, Math.PI / 2);
+      for (const z of [-1.2, 1.2]) b.boxC(1.4, 0.12, 0.7, DARK, 6.4, 1.35, z, 0, 0, -0.15);
       wheels(b, [6.4], 1.2, 0.6);
     } else {
       b.box(2.7, 2.9, 3.1, color, 5.0, 0.9, 0);
@@ -31,6 +44,23 @@
       b.box(0.35, 0.45, 3.15, DARK, 6.45, 0.65, 0);
       for (const z of [-1.0, 1.0]) b.box(0.08, 0.3, 0.55, 0xfff1b8, 6.4, 1.3, z);
       b.box(0.5, 0.12, 2.4, shade(color, 0.8), 6.2, 1.8, 0);
+      // grille, bumper, lamps, visor, roof fairing, mirrors, steps, fuel tanks
+      for (const y of [1.0, 1.25, 1.5]) b.box(0.06, 0.1, 1.5, CHROME, 6.42, y, 0);
+      b.box(0.4, 0.5, 3.2, 0x2c2f36, 6.42, 0.45, 0);
+      for (const z of [-1.15, 1.15]) b.box(0.06, 0.18, 0.3, 0xe08a2a, 6.5, 0.75, z);
+      b.box(0.5, 0.08, 3.0, shade(color, 0.7), 6.45, 3.42, 0);
+      b.boxC(1.7, 0.9, 3.0, shade(color, 1.05), 4.85, 4.85, 0, 0, 0, 0.3);
+      for (const z of [-0.6, 0, 0.6]) b.box(0.12, 0.1, 0.18, 0xe08a2a, 5.8, 4.45, z);
+      for (const z of [-1.75, 1.75]) {
+        b.box(0.08, 0.08, 0.4, DARK, 6.15, 3.0, z * 0.93);
+        b.box(0.14, 0.75, 0.22, DARK, 6.2, 2.25, z);
+      }
+      for (const z of [-1.6, 1.6]) {
+        b.box(0.7, 0.08, 0.35, DARK, 5.4, 0.55, z);
+        b.box(0.7, 0.08, 0.35, DARK, 5.4, 1.05, z);
+        b.cyl(0.42, 0.42, 1.5, CHROME, 2.6, 0.95, z * 0.82, 14, 0, 0, Math.PI / 2);
+      }
+      b.box(1.0, 0.1, 0.7, DARK, 4.95, 1.3, 1.25); b.box(1.0, 0.1, 0.7, DARK, 4.95, 1.3, -1.25);
       wheels(b, [4.95], 1.2, 0.6);
     }
   }
@@ -58,6 +88,7 @@
       for (const z of [-1.3, 1.3]) t.box(2.7, 0.12, 0.62, shade(color, 0.7), 1.4, 1.32, z);
       t.box(0.25, 1.6, 0.25, CHROME, 3.15, 0.95, -1.0);
       wheels(t, [0.8, 2.0], 1.2, 0.6);
+      guards(t, 0.8, 2.0);
     }
     const tm = t.mesh();
     if (!rigid) tm.position.x = TRACTOR_SHIFT;
@@ -107,6 +138,10 @@
     }
     for (const z of [-0.95, 0.95]) b.box(0.18, 0.75, 0.18, 0x9aa1c4, 0.6, 0.15, z); // landing legs
     wheels(b, [-6.0, -4.75], 1.2, 0.6);
+    guards(b, -6.0, -4.75);
+    for (const z of [-1.25, 1.25]) b.box(0.06, 0.7, 0.5, 0x1d1f24, -6.9, 0.35, z); // mud flaps
+    for (const z of [-1.4, 1.4]) b.box(0.06, 0.2, 0.35, 0xc8202e, -7.75, 1.0, z); // tail lamps
+    b.box(0.25, 0.15, 2.6, 0x9aa1c4, -7.6, 0.75, 0); // under-run guard
     const pivot = new T.Group();
     pivot.position.x = KINGPIN;
     const inner = new T.Group();
@@ -165,7 +200,7 @@
       this.frac = -1;
       const k = this.kind;
       if (k === 'heap') {
-        this.mesh = new T.Mesh(heapGeometry(L), new T.MeshLambertMaterial({ color: this.colors[0], flatShading: true }));
+        this.mesh = new T.Mesh(heapGeometry(L), new T.MeshStandardMaterial({ color: this.colors[0], flatShading: true }));
         this.mesh.castShadow = this.mesh.receiveShadow = true;
         this.g.add(this.mesh);
         this.h = heapH || 1.9;
@@ -213,7 +248,7 @@
       // bottom tier first, front (headboard) end first: unloading empties the door end, loading fills from the front
       pos.sort((p, q) => p[1] - q[1] || q[0] - p[0]);
       if (fixed.p.length) this.g.add(fixed.mesh());
-      this.im = new T.InstancedMesh(geo, new T.MeshLambertMaterial({ color: 0xffffff, transparent: k === 'panes', opacity: k === 'panes' ? 0.75 : 1 }), pos.length);
+      this.im = new T.InstancedMesh(geo, new T.MeshStandardMaterial({ color: 0xffffff, transparent: k === 'panes', opacity: k === 'panes' ? 0.75 : 1 }), pos.length);
       this.im.castShadow = this.im.receiveShadow = true;
       const _m = new T.Matrix4(), _q = new T.Quaternion(), _e = new T.Euler(), _c = new T.Color(), _p = new T.Vector3(), _s = new T.Vector3(1, 1, 1);
       pos.forEach(([x, y, z, tilt], i) => {
@@ -352,7 +387,14 @@
     }
     for (const z of [-0.6, 0.6]) b.box(0.08, 0.25, 0.45, 0xfff1b8, 2.25, 0.75, z);
     for (const z of [-0.65, 0.65]) b.box(0.08, 0.25, 0.4, 0xe2384d, -2.25, 0.85, z);
-    for (const x of [1.45, -1.45]) for (const z of [-0.92, 0.92]) b.cyl(0.37, 0.37, 0.3, P.tire, x, 0.37, z, 10, Math.PI / 2);
+    const L = kind === 'van' ? 6.0 : kind === 'pickup' || kind === 'suv' ? 5.0 : 4.6, Wd = kind === 'suv' || kind === 'van' ? 2.08 : 1.98;
+    b.box(0.25, 0.32, Wd + 0.02, 0x2c2f36, L / 2 - 0.2, 0.3, 0);
+    b.box(0.25, 0.32, Wd + 0.02, 0x2c2f36, -L / 2 + 0.25, 0.3, 0);
+    for (const z of [-1, 1]) {
+      b.box(L - 1.2, 0.18, 0.04, 0x2c2f36, 0, 0.38, z * (Wd / 2 + 0.005));
+      b.box(0.22, 0.14, 0.12, color, kind === 'van' ? 2.2 : 0.95, kind === 'van' ? 2.05 : 1.35, z * (Wd / 2 + 0.06));
+    }
+    for (const x of [1.45, -1.45]) for (const z of [-0.92, 0.92]) M.wheel(b, x, 0.37, z, 0.37, 0.3);
     const g = new T.Group();
     g.add(b.mesh());
     g.userData.half = 1.1;
@@ -493,12 +535,16 @@
     g.userData.arm = arm;
     return g;
   };
+  // conifer: a straight trunk under five drooping tiers, each a lumpy cone, darkest at the bottom
   M.conifer = () => {
     const b = new MB();
-    b.cyl(0.22, 0.28, 1.6, 0x8a6a4e, 0, 0.8, 0, 6);
-    b.cyl(0.05, 1.7, 3.2, 0x4f9f6a, 0, 2.6, 0, 7);
-    b.cyl(0.05, 1.3, 2.6, 0x5cb377, 0, 4.0, 0, 7);
-    b.cyl(0.02, 0.8, 1.8, 0x6cc285, 0, 5.2, 0, 7);
+    b.cyl(0.12, 0.26, 2.0, 0x4e3b2c, 0, 1.0, 0, 6);
+    const tiers = [[1.9, 1.3, 2.0, 0x22442a], [1.6, 2.4, 1.9, 0x274b2d], [1.3, 3.4, 1.7, 0x2c5331], [0.95, 4.35, 1.5, 0x325a35], [0.55, 5.2, 1.3, 0x38623a]];
+    for (const [r, y, h, c] of tiers) {
+      b.cyl(0.08, r, h, c, 0, y + h / 2, 0, 9);
+      b.cyl(r, r * 0.82, 0.25, shade(c, 0.75), 0, y + 0.12, 0, 9);
+    }
+    b.cyl(0.02, 0.25, 0.9, 0x38623a, 0, 6.8, 0, 6);
     return b.build();
   };
   // rubber-tyred gantry for the container depot (span along x, travels along z)

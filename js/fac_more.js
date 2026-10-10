@@ -227,7 +227,7 @@
         ctx.fillStyle = '#ffffff'; M.hexPath(ctx, 128, 128, 44); ctx.fill();
       });
       for (const [x, z, r] of [[50, 8.1, 0], [50, -8.1, Math.PI], [58.1, 0, Math.PI / 2], [41.9, 0, -Math.PI / 2]]) {
-        const d = new T.Mesh(new T.PlaneGeometry(6, 6), new T.MeshLambertMaterial({ map: tex, transparent: true }));
+        const d = new T.Mesh(new T.PlaneGeometry(6, 6), new T.MeshStandardMaterial({ map: tex, transparent: true }));
         d.position.set(x, 31, z); d.rotation.y = r;
         this.structure.add(d);
       }

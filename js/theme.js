@@ -1,23 +1,12 @@
-/* WareTrack – light / dark theme. Dark mode is a moonlit park: dark ground, roads and water, cooler and dimmer
-   light, while buildings, vehicles and road markings keep their colours. The choice is remembered; until one is
+/* WareTrack – light / dark theme. Dark mode is the park by moonlight: a night sky and cool, dim light. The choice is remembered; until one is
    made the system preference is followed. Toggle with the map toolbar button or N. */
 (function () {
-  const M = WT.M, W = WT.W, KEY = 'waretrack-theme';
-  // ground surfaces (W.COL and a few lane / shoreline greys) → their night colours
-  const NIGHT = {
-    0xe8ebfa: 0x1b2133, // ground
-    0xcdd3f0: 0x343c58, // road
-    0xdde1f5: 0x2a3149, // apron
-    0xd8ddf2: 0x2c3350, // concrete
-    0xdfe3f5: 0x262d44, // plot pad
-    0xadc9f3: 0x16294a, // water
-    0xc9c6d6: 0x3a3746, // ballast
-    0xbfc5e2: 0x3a4260, // runway, courier lanes
-    0xdfe2f2: 0x2e3448, // shoreline
-  };
+  const W = WT.W, KEY = 'waretrack-theme';
+  // Day is a hazy summer afternoon; night is moonlit, with a dark sky and cool, dim light. Materials keep their
+  // real colours either way: only the sky, the sun / moon and the light they bounce around change.
   const LOOK = {
-    light: { clear: 0xe8ebfa, sky: 0xffffff, ground: 0xb4bbe0, hemi: 0.74, sun: 0xffffff, sunI: 0.5, ripple: 0xd6e5fb },
-    dark: { clear: 0x121726, sky: 0x9fb0ff, ground: 0x1a2036, hemi: 0.55, sun: 0xcfd9ff, sunI: 0.42, ripple: 0x2b4470 },
+    light: { sky: WT.LOOK.SKY.day, hemiSky: 0xcfe0ff, hemiGround: 0x4a4234, hemi: 0.25, sun: 0xfff1dc, sunI: 2.6, exposure: 1.0, ripple: 0xe8f0f6, night: 0, puff: 1 },
+    dark: { sky: WT.LOOK.SKY.night, hemiSky: 0x6d82b8, hemiGround: 0x101318, hemi: 0.06, sun: 0x9fb4ff, sunI: 0.32, exposure: 1.1, ripple: 0x3a4c66, night: 1, puff: 0.22 },
   };
   const stored = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
   const system = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -29,12 +18,12 @@
     document.body.classList.toggle('dark', mode === 'dark');
     document.documentElement.style.colorScheme = mode;
     const L = LOOK[mode];
-    M.tint = mode === 'dark' ? (c) => (NIGHT[c] !== undefined ? NIGHT[c] : c) : null;
-    M.retint();
-    WT.renderer.setClearColor(L.clear);
-    WT.lights.hemi.color.setHex(L.sky); WT.lights.hemi.groundColor.setHex(L.ground); WT.lights.hemi.intensity = L.hemi;
+    WT.setSky(L.sky);
+    WT.renderer.toneMappingExposure = L.exposure;
+    WT.lights.hemi.color.setHex(L.hemiSky); WT.lights.hemi.groundColor.setHex(L.hemiGround); WT.lights.hemi.intensity = L.hemi;
     WT.lights.sun.color.setHex(L.sun); WT.lights.sun.intensity = L.sunI;
     if (W.rippleMat) W.rippleMat.color.setHex(L.ripple);
+    WT.LOOK.night.value = L.night; WT.LOOK.puffShade = L.puff;
     WT.emit('theme', mode);
   };
   Theme.toggle = () => Theme.set(Theme.mode === 'dark' ? 'light' : 'dark');

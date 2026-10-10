@@ -3,11 +3,16 @@
   const T = THREE, M = WT.M, MB = M.MB, P = M.P, shade = M.shade;
 
   /* ---------- instanced tree geometry ---------- */
+  // broadleaf: a tapering trunk with two limbs under a clump of lumpy foliage, lit lighter on top
   M.treeGeometry = () => {
     const b = new MB();
-    b.cyl(0.24, 0.32, 2.4, 0x9c7a5b, 0, 1.2, 0, 6);
-    b.ico(1.75, 0x7cc96a, 0, 3.5, 0, 1.15);
-    b.ico(1.15, 0x8fd476, 0.3, 4.7, 0.2);
+    b.cyl(0.14, 0.3, 3.2, 0x5b4636, 0, 1.6, 0, 7);
+    b.cyl(0.07, 0.11, 1.6, 0x5b4636, 0.45, 2.9, 0.1, 4, 0, 0, -0.6);
+    b.blob(1.7, 0x3f6d29, 0, 4.0, 0, 1, 0.85, 1, 1, 0.3, 1);
+    b.blob(1.25, 0x4b7b30, 0.9, 4.4, 0.5, 1, 0.9, 1, 1, 0.32, 2);
+    b.blob(1.2, 0x37622a, -0.9, 4.2, -0.4, 1, 0.9, 1, 0, 0.32, 3);
+    b.blob(1.05, 0x55853a, 0.1, 5.3, -0.2, 1, 0.9, 1, 0, 0.3, 4);
+    b.blob(0.95, 0x426f2c, -0.3, 4.6, 1.0, 1, 0.9, 1, 0, 0.25, 5);
     return b.build();
   };
 

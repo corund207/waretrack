@@ -4,30 +4,85 @@
   const M = (WT.M = {});
 
   /* ---------- materials ---------- */
-  // M.tint (set by theme.js) maps a base colour to the current theme's; M.retint() re-applies it to every material
+  // Physically based throughout (see look.js): surface colours (roads, grass, concrete, water...) are swapped for
+  // what they are made of and get procedural detail; everything else derives roughness / metalness from its colour.
+  // M.tint is kept for callers that want to remap colours (null = none); M.retint() re-applies it.
   const matCache = {};
+  const LK = WT.LOOK;
   M.tint = null;
+  M.real = (c) => LK.real(c);
   M.mat = (color, o = {}) => {
     const key = color + JSON.stringify(o);
     if (!matCache[key]) {
-      matCache[key] = new T.MeshLambertMaterial(Object.assign({ color: M.tint ? M.tint(color) : color }, o));
-      matCache[key].userData.base = color;
+      const { surface, ...opts } = o;
+      const sf = LK.SURF[color] || (surface ? { c: LK.real(color), kind: 3 } : null);
+      const base = sf ? sf.c : LK.real(color);
+      const m = (matCache[key] = new T.MeshStandardMaterial(Object.assign({ color: M.tint ? M.tint(base) : base, roughness: 0.6 }, opts)));
+      m.userData.base = base;
+      if (sf) m.userData.kind = sf.kind;
     }
     return matCache[key];
   };
   M.retint = () => { for (const m of Object.values(matCache)) m.color.setHex(M.tint ? M.tint(m.userData.base) : m.userData.base); };
-  M.vc = new T.MeshLambertMaterial({ vertexColors: true });
-  M.glass = new T.MeshLambertMaterial({ color: 0x2b3866, emissive: 0x0d1430 });
+  M.vc = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
+  M.glass = new T.MeshStandardMaterial({ color: 0x1d2a44, roughness: 0.05, metalness: 0.5 });
+  M.glass.userData.auto = false;
 
   /* ---------- merged-geometry builder ---------- */
   const unitBox = new T.BoxGeometry(1, 1, 1);
   const geoCache = {};
+  // a box with flat 45° chamfers along every edge and a triangle on every corner
+  const bevelCache = new Map();
+  function bevelBox(w, h, d, b) {
+    const key = w.toFixed(3) + ',' + h.toFixed(3) + ',' + d.toFixed(3) + ',' + b.toFixed(3);
+    let g = bevelCache.get(key);
+    if (g) return g;
+    const H = [w / 2 - b, h / 2 - b, d / 2 - b];
+    const pos = [], nor = [];
+    // the point on corner s (signs) pushed out along axis a
+    const P = (s, a) => { const p = [s[0] * H[0], s[1] * H[1], s[2] * H[2]]; p[a] += s[a] * b; return p; };
+    const quad = (p0, p1, p2, p3, n) => {
+      // wind counter-clockwise seen from outside
+      const e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], e2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+      const cx = e1[1] * e2[2] - e1[2] * e2[1], cy = e1[2] * e2[0] - e1[0] * e2[2], cz = e1[0] * e2[1] - e1[1] * e2[0];
+      const tri = cx * n[0] + cy * n[1] + cz * n[2] >= 0 ? [p0, p1, p2, p0, p2, p3] : [p0, p2, p1, p0, p3, p2];
+      for (const p of tri) { pos.push(p[0], p[1], p[2]); nor.push(n[0], n[1], n[2]); }
+    };
+    const tri = (p0, p1, p2, n) => quad(p0, p1, p2, p2, n);
+    const S = [-1, 1];
+    for (let a = 0; a < 3; a++) {
+      const u = (a + 1) % 3, v = (a + 2) % 3;
+      for (const sa of S) {
+        // main face
+        const c = (su, sv) => { const s = [0, 0, 0]; s[a] = sa; s[u] = su; s[v] = sv; return P(s, a); };
+        const n = [0, 0, 0]; n[a] = sa;
+        quad(c(-1, -1), c(1, -1), c(1, 1), c(-1, 1), n);
+        // edge chamfer between face a and face u
+        for (const su of S) {
+          const s0 = [0, 0, 0], s1 = [0, 0, 0];
+          s0[a] = s1[a] = sa; s0[u] = s1[u] = su; s0[v] = -1; s1[v] = 1;
+          const en = [0, 0, 0]; en[a] = sa * Math.SQRT1_2; en[u] = su * Math.SQRT1_2;
+          quad(P(s0, a), P(s1, a), P(s1, u), P(s0, u), en);
+        }
+      }
+    }
+    for (const sx of S) for (const sy of S) for (const sz of S) {
+      const s = [sx, sy, sz], k = 1 / Math.sqrt(3);
+      tri(P(s, 0), P(s, 1), P(s, 2), [sx * k, sy * k, sz * k]);
+    }
+    g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
+    if (bevelCache.size > 4000) bevelCache.clear();
+    bevelCache.set(key, g);
+    return g;
+  }
   const _m = new T.Matrix4(), _q = new T.Quaternion(), _e = new T.Euler(), _v = new T.Vector3(), _s = new T.Vector3(), _n = new T.Matrix3(), _c = new T.Color();
 
   class MB {
     constructor() { this.p = []; this.n = []; this.c = []; this.i = []; this.off = 0; }
     add(geo, m4, color) {
-      _c.set(color);
+      _c.set(LK.real(color));
       const pos = geo.attributes.position, nor = geo.attributes.normal;
       _n.getNormalMatrix(m4);
       for (let k = 0; k < pos.count; k++) {
@@ -42,11 +97,16 @@
       this.off += pos.count;
       return this;
     }
-    // center-positioned box
+    // center-positioned box; anything thicker than 0.18 m gets chamfered edges that catch the light
     boxC(w, h, d, color, x, y, z, rx = 0, ry = 0, rz = 0) {
       _q.setFromEuler(_e.set(rx, ry, rz));
-      _m.compose(_v.set(x, y, z), _q, _s.set(w, h, d));
-      return this.add(unitBox, _m.clone(), color);
+      const t = Math.min(w, h, d);
+      if (t < 0.18) {
+        _m.compose(_v.set(x, y, z), _q, _s.set(w, h, d));
+        return this.add(unitBox, _m.clone(), color);
+      }
+      _m.compose(_v.set(x, y, z), _q, _s.set(1, 1, 1));
+      return this.add(bevelBox(w, h, d, Math.min(0.09, t * 0.12, Math.max(w, h, d) * 0.02 + 0.02)), _m.clone(), color);
     }
     // bottom-positioned box
     box(w, h, d, color, x, yb, z, rx, ry, rz) { return this.boxC(w, h, d, color, x, yb + h / 2, z, rx, ry, rz); }
@@ -68,6 +128,25 @@
       const g = geoCache[key] || (geoCache[key] = new T.IcosahedronGeometry(r, 0));
       _m.compose(_v.set(x, y, z), _q.identity(), _s.set(1, sy, 1));
       return this.add(g, _m.clone(), color);
+    }
+    // a lumpy, smooth-shaded ball (tree canopies, bushes): darker underneath, as foliage shades itself
+    blob(r, color, x, y, z, sx = 1, sy = 1, sz = 1, detail = 1, lump = 0.22, seed = 1) {
+      const key = 'b' + detail;
+      const g = geoCache[key] || (geoCache[key] = new T.IcosahedronGeometry(1, detail));
+      const pos = g.attributes.position, base = new T.Color(LK.real(color));
+      for (let k = 0; k < pos.count; k++) {
+        const px = pos.getX(k), py = pos.getY(k), pz = pos.getZ(k);
+        const hsh = Math.sin(px * 12.9898 * seed + py * 78.233 + pz * 37.719 + seed * 4.1) * 43758.5453;
+        const f = r * (1 - lump / 2 + lump * (hsh - Math.floor(hsh)));
+        this.p.push(x + px * f * sx, y + py * f * sy, z + pz * f * sz);
+        _v.set(px / sx, py / sy, pz / sz).normalize();
+        this.n.push(_v.x, _v.y, _v.z);
+        const sh = 0.55 + 0.45 * (py * 0.5 + 0.5);
+        this.c.push(base.r * sh, base.g * sh, base.b * sh);
+        this.i.push(this.off + k);
+      }
+      this.off += pos.count;
+      return this;
     }
     geo(g, color, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
       _q.setFromEuler(_e.set(rx, ry, rz));
@@ -98,6 +177,7 @@
     draw(c.getContext('2d'), w, h);
     const t = new T.CanvasTexture(c);
     t.anisotropy = 4;
+    t.encoding = T.sRGBEncoding;
     return t;
   };
   function hexPath(ctx, cx, cy, r) {
@@ -132,7 +212,7 @@
   };
   // flat decal plane (faces +Z by default)
   M.decal = (tex, w, h) => {
-    const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
+    const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false }));
     m.renderOrder = 2;
     return m;
   };
@@ -150,7 +230,7 @@
     carton: [0xcf9d62, 0xd9ad74, 0xc4925a, 0xdcb47e], tape: 0xe9d3a4,
     wood: 0xdcbf8f, wood2: 0xc8a777, tire: 0x262a3d, hub: 0xa7aec9,
     white: 0xf6f7fd, grey: 0xb9bfd8, dark: 0x3a4062, skin: 0xf0c7a0,
-    orange: 0xf5a524, teal: 0x2aa198, green: 0x6cc570, leaf: [0x7cc96a, 0x5fb85a, 0x8fd476],
+    orange: 0xf5a524, teal: 0x2aa198, green: 0x6cc570, leaf: [0x4a7a2e, 0x3d6b28, 0x58863a],
   });
 
   /* ---------- pallet ---------- */
@@ -503,10 +583,11 @@
   /* ---------- nature / props ---------- */
   M.tree = (s = 1) => {
     const b = new MB();
-    b.cyl(0.22 * s, 0.3 * s, 2.2 * s, 0x9c7a5b, 0, 1.1 * s, 0, 7);
+    b.cyl(0.16 * s, 0.28 * s, 2.6 * s, 0x5b4636, 0, 1.3 * s, 0, 7);
     const c = WT.pick(P.leaf);
-    b.sphere(1.55 * s, c, 0, 3.1 * s, 0, 1, 1.15, 1, 9);
-    b.sphere(1.0 * s, shade(c, 1.1), 0.3 * s, 4.3 * s, 0.2 * s, 1, 1.1, 1, 8);
+    b.blob(1.6 * s, c, 0, 3.4 * s, 0, 1, 0.9, 1, 1, 0.3, 2);
+    b.blob(1.1 * s, shade(c, 1.12), 0.5 * s, 4.4 * s, 0.3 * s, 1, 0.9, 1, 1, 0.3, 3);
+    b.blob(1.0 * s, shade(c, 0.9), -0.7 * s, 3.9 * s, -0.4 * s, 1, 0.85, 1, 1, 0.3, 4);
     return b.mesh();
   };
   M.lamp = () => {
