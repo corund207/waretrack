@@ -254,14 +254,16 @@
   S.needMoverDepot = false;
   const MOVER_COST = 120e3;
   function planFleet() {
-    if (!active('Mover depot').length) return;
+    // congested roads are not a mover shortage: more movers would only lengthen the queues
+    if (!active('Mover depot').length || WT.TR.jam > 0.2) return;
     const f = S.fleet(), reserve = reserveN(f.size), waiting = S.dispatchQ.length + S.internalQ.length;
     const short = WT.sim.minutes - S.moverShortT < 8 || f.home < reserve;
     const free = bays().filter((b) => b.state === 'empty');
     if (short && free.length <= 4) S.needMoverDepot = true;
     if (!short) return;
     let want = Math.max(1, waiting) + reserve - f.home - f.incoming;
-    want = Math.min(want, 3, free.length, Math.max(4, Math.ceil(f.size / 4)) - f.incoming);
+    // one lowloader at a time, at most two on the road
+    want = Math.min(want, 1, free.length, 2 - f.incoming);
     for (const b of free.slice(0, Math.max(0, want))) {
       if (WT.G && WT.G.money < MOVER_COST) return;
       const t = launch({ variant: 'flat', trailer: 'flat', carrier: HAULER, mission: 'Fleet delivery' }, [{ fac: b.depot, op: 'deliver', dock: b.del }]);

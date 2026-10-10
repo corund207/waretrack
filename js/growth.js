@@ -50,6 +50,16 @@
     }
     return null;
   }
+  // mover depots spread over the avenues (fewest depots first, nearest the park centre), so no one avenue carries the
+  // whole fleet home
+  function depotPlot() {
+    const n = (A) => WT.facilities.filter((f) => f.type === 'Mover depot' && f.plot && f.plot.A === A).length;
+    for (const A of [...W.AVENUES].sort((a, b) => n(a) - n(b) || Math.abs(a) - Math.abs(b))) for (let k = 0; k < W.PLOT_K; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
+      const p = W.plotAt(A, s, h, k);
+      if (p && !p.used) return p;
+    }
+    return null;
+  }
   function project(type, make, extra = {}) {
     if (!Number.isFinite(COST[type]) || !DUR[type] || !ICON[type]) throw new Error('Incomplete project catalogue: ' + type);
     return Object.assign({ type, make, cost: costOf(type), label: type, icon: ICON[type] }, extra);
@@ -98,14 +108,20 @@
     const stands = count('Stand'), plotFacs = WT.facilities.filter((f) => f.plot).length;
     if (stands < WT.AIR.standXs.length && plotFacs >= 6 + stands * 4) { queue.push(project('Stand', () => new WT.Stand(stands + 1))); return queue[0]; }
     if (W.railBuilt) for (const A of W.AVENUES) {
-      if (usedOn(A) >= 3 && !has('Rail terminal', (f) => f.A === A) && !(A === 600)) { queue.push(project('Rail terminal', () => new WT.RailTerminal(A))); return queue[0]; }
+      if (usedOn(A) >= 2 && !has('Rail terminal', (f) => f.A === A) && !(A === 600)) { queue.push(project('Rail terminal', () => new WT.RailTerminal(A))); return queue[0]; }
     }
     for (const A of W.AVENUES) {
       if (usedOn(A) >= 4 && !has('Port terminal', (f) => f.A === A)) { queue.push(project('Port terminal', () => new WT.Port(A))); return queue[0]; }
     }
+    // once the park's own yards are all at work, more yards out along the mainline for rail capacity
+    const yards = WT.facilities.filter((f) => f.type === 'Rail terminal');
+    if (yards.length >= 2 && yards.every((f) => f.active)) {
+      const A = W.YARD_SITES.find((x) => !yards.some((f) => f.A === x));
+      if (A !== undefined) { queue.push(project('Rail terminal', () => new WT.RailTerminal(A))); return queue[0]; }
+    }
     // every mover bay is taken and jobs still wait for a mover: another depot for the growing fleet
     if (WT.SUP.needMoverDepot && !has('Mover depot', (f) => !f.active)) {
-      const p = freePlot();
+      const p = depotPlot();
       if (p) { p.used = 'planned'; WT.SUP.needMoverDepot = false; queue.push(project('Mover depot', () => new WT.MoverDepot(p), { plot: p })); return queue[0]; }
     }
     // upstream industry: build a primary plant once enough assembly lines depend on its output

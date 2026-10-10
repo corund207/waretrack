@@ -13,7 +13,7 @@ const BATCHES = +(process.env.SIM_BATCHES || 60); // × 20 sim-minutes, includin
 let failed = 0;
 const check = (cond, msg) => { if (cond) console.log('✓ ' + msg); else { failed++; console.error('✗ ' + msg); } };
 
-const { browser, page, errors } = await open(site, { width: 1280, height: 720 });
+const { browser, page, errors } = await open(site, { width: 1280, height: 720, seed: +(process.env.SEED || 7) });
 console.log(`site: ${site}`);
 try {
   const badge = await page.$eval('#brand .ver', (e) => e.textContent);
@@ -111,6 +111,7 @@ try {
       movers: WT.trucks.filter((t) => t.variant === 'mover').length,
       semiAtTerminal: WT.__semiAtTerminal || [],
       fleet: WT.SUP.fleet(),
+      yards: facs.filter((f) => f.type === 'Rail terminal').map((f) => f.id + '@' + f.A),
       moverWait: WT.SUP.moverWait,
       awaitingMover: WT.SUP.dispatchQ.length,
       starved: plants.filter((f) => f.starved).length,
@@ -137,6 +138,7 @@ try {
   check(st.semiAtTerminal.length === 0, 'only autonomous movers collect or drop containers at rail and port terminals' + (st.semiAtTerminal.length ? ': ' + [...new Set(st.semiAtTerminal)].slice(0, 3).join(' | ') : ''));
   check(st.moverDepots >= 1 && st.fleet.size > 20 && st.moversDelivered > 0, `mover fleet grew to ${st.fleet.size} (${st.moversDelivered} delivered by lowloader, ${st.moverDepots} depot${st.moverDepots > 1 ? 's' : ''}, ${st.fleet.out} on jobs)`);
   console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);
+  console.log('  rail yards: ' + st.yards.join(' '));
   const mw = st.moverWait;
   console.log(`  mover wait: ${mw.n} containers · avg ${(mw.sum / Math.max(1, mw.n)).toFixed(1)} min · max ${mw.max.toFixed(1)} min · ${st.awaitingMover} waiting now · ${st.starved}/${st.plants} plants starved`);
   check(maxOverlap <= 3, `vehicles never pile into each other (max ${maxOverlap} touching pairs)`);

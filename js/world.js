@@ -10,6 +10,8 @@
   const COL = W.COL;
   W.AVENUES = [-120, 120, -360, 360, -600, 600];
   W.EDGE = 1700;
+  // extra rail yards beyond the park grid, each on an access avenue of its own along the mainline (600 is the airfield)
+  W.YARD_SITES = [-840, 1320, -1080];
   W.SEA_Z = 600;
   W.RAIL = { zE: -650, zW: -662 };
   // two lanes each way: highway lanes at |z| 2.0 / 5.6, avenue lanes at |x − A| 1.9 / 5.5 (inner / outer)
@@ -134,9 +136,12 @@
     // street lamps both sides
     const lb = new M.MB();
     // none past |z| 556: the rail and port terminals' gate lanes cross the avenue ends there
+    // ... nor in front of a plot's gates (|zc| ± 46), where traffic turns in and out
+    const gates = W.plots.filter((q) => q.A === A && q.h === h).flatMap((q) => [Math.abs(q.zc) - 46, Math.abs(q.zc) + 46]);
+    const lampOk = (zz) => zz < 556 && !gates.some((gz) => Math.abs(gz - zz) < 9);
     for (let z = 14; z < len; z += 34) {
-      if (from + z < 556) M.lampInto(lb, -8.4, z, 0);
-      if (from + z + 17 < 556) M.lampInto(lb, 8.4, z + 17, Math.PI);
+      if (lampOk(from + z)) M.lampInto(lb, -8.4, z, 0);
+      if (lampOk(from + z + 17)) M.lampInto(lb, 8.4, z + 17, Math.PI);
     }
     if (lb.p.length) g.add(lb.mesh());
     g.scale.z = 0.001;
@@ -331,7 +336,7 @@
     const a = Math.floor(x0 / step) * step, b = Math.ceil(x1 / step) * step;
     for (let x = a; x <= b; x += step) {
       if (r.list.find((p) => p.x === x)) continue;
-      if (W.AVENUES.some((A) => Math.abs(A - x) < 10)) continue;
+      if ([...W.AVENUES, ...W.YARD_SITES].some((A) => Math.abs(A - x) < 10)) continue; // leave room for every avenue
       const m = M.pylon();
       m.position.set(x, 0, z);
       m.scale.y = 0.01;

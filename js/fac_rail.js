@@ -409,11 +409,13 @@
     let sent = 0;
     if (R) {
       const yard = WT.facilities.find((f) => f.type === 'Off-site empty yard' && f.active && !f.trainBusy);
-      const et = yard && open().find((t) => t.emptyCount() >= 3 && clearAt(t.A - 800));
+      // (empties leave east for the off-site spur, so not from a yard beyond its junction)
+      const et = yard && open().find((t) => t.emptyCount() >= 3 && clearAt(t.A - 800) && t.A + 150 < R.divergeE[0]);
       if (et) { R.emptyTrain(et, yard); sent++; }
       const factory = R.containerFactory && R.containerFactory();
       const site = factory && !factory.trainBusy && WT.facilities.find((f) => f.remote && f.active && !f.trainBusy && factory.available(f.mat) > 0 && S.backlog.rail.some((po) => po.mat === f.mat));
-      const terms = open();
+      // mine trains join the main at the west merge, so they run to the yards east of it
+      const terms = open().filter((t) => t.A - 150 > R.mergeW[1]);
       if (site && terms.length) {
         const term = terms.reduce((a, b) => (b.roomFor() > a.roomFor() ? b : a));
         const manifest = S.takeManifest('rail', Math.min(10, factory.available(site.mat), term.roomFor() - 2), (po) => po.mat === site.mat);

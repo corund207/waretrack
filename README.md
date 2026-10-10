@@ -59,7 +59,7 @@ shows which build you are looking at (deployed builds also show the commit hash)
 |------|--------------|
 | Founded | Avenue paved, first **warehouse** with dock bays, apron and yard forklifts, and pallet slots |
 | Manufacturing | **Factories**: ore silos → smelter (glowing ingots on an elevated belt) → sawtooth assembly hall → a conveyor bridge carrying cartons into the paired warehouse, with smoking chimneys |
-| Rail freight | A track-laying train builds the double-track **mainline**. **Rail terminals** get two sidings, so two trains are worked at once, three gantry cranes over a 34-slot stack and five truck spots. A freight call goes out for every free siding with cargo booked, mine trains run whenever the container works can load one, and through freight keeps to the westbound main |
+| Rail freight | A track-laying train builds the double-track **mainline**. **Rail terminals** get two sidings, so two trains are worked at once, three gantry cranes over a 34-slot stack and five truck spots. A freight call goes out for every free siding with cargo booked, mine trains run whenever the container works can load one, and through freight keeps to the westbound main. Besides a yard on each park avenue (except the airfield's), three more yards open out along the mainline at −840, −1080 and 1320, each paving its own access avenue |
 | Seaport | **Port terminals** with ship-to-shore cranes. Feeder vessels berth, unload and load, and cargo ships pass offshore |
 | Air cargo | **Airfield**, cargo terminal with landside belt docks, 4 stands with ULD tugs, and a control tower. Freighters fly in over the park, land, turn around and take off |
 | Mega hub | Power plants with steaming cooling towers and pylon lines, **container depots**, a **truck stop** with fuel canopies and a diner, cold-storage, fulfilment and bulk warehouses, substations, water towers, solar farms, tank farms, an HQ tower and staff parking with shuttle-bus stops, filling about 100 plots across 6 avenues |
@@ -98,8 +98,9 @@ Movers run faster than road trucks and keep a reserve for factory supply: export
 a mover when no container is waiting for one. The first depot opens with a full fleet of 20 just before the first
 rail terminal. Whenever jobs wait for a free mover, fleet control orders enough for every waiting container plus the
 reserve: each one comes in on a heavy-haul lowloader that drives down an empty bay's lane, where the new mover
-reverses off the deck onto its charger. Before the last bays fill, the planner builds another depot (8 movers to
-start).
+reverses off the deck onto its charger, one lowloader at a time and never while the roads are congested (a jam is
+not a mover shortage). Before the last bays fill, the planner builds another depot (8 movers to start) on the
+avenue with the fewest depots, so no one avenue carries the whole fleet home.
 
 Stock only rises when the delivery is physically received at the dock: containers are opened and destuffed, ULDs
 broken down, tanks pumped through a hose. Click any container, ULD or vehicle to see its order and full journey log.
