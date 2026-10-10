@@ -164,6 +164,18 @@
   // carriageway) runs in the outer lanes; a turn across the other carriageway runs in the inner lanes. So turning
   // traffic queues in its own lane and through traffic keeps moving. Vehicles pick their highway lane on entry and
   // change at most once, well clear of any junction.
+  // vehicles queueing (slow) in one lane: along x (highway lane at z = c) or along z (avenue lane at x = c), between a and b
+  W.laneQueue = (a, b, c, axis) => {
+    if (!WT.TR) return 0;
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    let n = 0;
+    for (const v of WT.TR.vehicles) {
+      if (v.proxyOf || v.actor.speed > 4) continue;
+      const along = axis === 'x' ? v.actor.x : v.actor.z, across = axis === 'x' ? v.actor.z : v.actor.x;
+      if (Math.abs(across - c) < 1.3 && along >= lo && along <= hi) n++;
+    }
+    return n;
+  };
   W.route = function (from, to) {
     if (from.A !== undefined && to.A !== undefined && from.A === to.A) {
       const vz = to.z < from.z ? -1 : 1, lx = W.avLaneX(to.A, vz, false);
@@ -173,13 +185,18 @@
     const tx = to.edge ? (to.edge === 'W' ? -W.edgeX() : W.edgeX()) : to.A;
     const sx = from.hw !== undefined ? from.hw : from.edge ? (from.edge === 'W' ? -W.edgeX() : W.edgeX()) : from.A;
     const dir = Math.sign(tx - sx) || 1, side = dir > 0 ? 1 : -1;
-    // lane needed at the far end: leaving onto an avenue on the near side → outer, across → inner; edge → inner
-    const exitOuter = to.edge ? false : Math.sign(to.z) === side;
+    // dual turn lanes: a vehicle keeps its lane through a turn (inner → inner, outer → outer — the two arcs never
+    // cross), and takes whichever lane is queueing less. Ties fall back to the natural lane: outer for a turn onto
+    // the near carriageway, inner for one across the other carriageway.
+    const pickLane = (natural, qInner, qOuter) => (qInner === qOuter ? natural : qOuter < qInner);
+    let exitOuter = to.edge ? false : Math.sign(to.z) === side;
+    if (!to.edge) exitOuter = pickLane(exitOuter, W.laneQueue(to.A - dir * 200, to.A - dir * 9, W.hwLaneZ(dir, false), 'x'), W.laneQueue(to.A - dir * 200, to.A - dir * 9, W.hwLaneZ(dir, true), 'x'));
     let entryOuter = exitOuter;
     if (from.hw !== undefined || from.edge) pts.push([sx, W.hwLaneZ(dir, entryOuter)]);
     else {
       const h = Math.sign(from.z) || 1;
-      entryOuter = h === side; // joining the near carriageway from this side of the highway
+      const zf = -h * 9, zn = -h * 220; // approach to the junction on this side
+      entryOuter = pickLane(h === side, W.laneQueue(zn, zf, W.avLaneX(from.A, -h, false), 'z'), W.laneQueue(zn, zf, W.avLaneX(from.A, -h, true), 'z'));
       const lx = W.avLaneX(from.A, -h, entryOuter);
       pts.push([lx, from.z], [lx, W.hwLaneZ(dir, entryOuter)]);
     }
@@ -355,7 +372,7 @@
     W.ripples = [];
     const rg = new T.PlaneGeometry(1, 1);
     rg.rotateX(-Math.PI / 2);
-    const rm = new T.MeshBasicMaterial({ color: 0xd6e5fb, transparent: true, opacity: 0.8 });
+    const rm = (W.rippleMat = new T.MeshBasicMaterial({ color: 0xd6e5fb, transparent: true, opacity: 0.8 }));
     for (let i = 0; i < 240; i++) {
       const r = new T.Mesh(rg, rm);
       r.scale.set(WT.rnd(3, 10), 1, 0.4);

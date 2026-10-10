@@ -4,12 +4,18 @@
   const M = (WT.M = {});
 
   /* ---------- materials ---------- */
+  // M.tint (set by theme.js) maps a base colour to the current theme's; M.retint() re-applies it to every material
   const matCache = {};
+  M.tint = null;
   M.mat = (color, o = {}) => {
     const key = color + JSON.stringify(o);
-    if (!matCache[key]) matCache[key] = new T.MeshLambertMaterial(Object.assign({ color }, o));
+    if (!matCache[key]) {
+      matCache[key] = new T.MeshLambertMaterial(Object.assign({ color: M.tint ? M.tint(color) : color }, o));
+      matCache[key].userData.base = color;
+    }
     return matCache[key];
   };
+  M.retint = () => { for (const m of Object.values(matCache)) m.color.setHex(M.tint ? M.tint(m.userData.base) : m.userData.base); };
   M.vc = new T.MeshLambertMaterial({ vertexColors: true });
   M.glass = new T.MeshLambertMaterial({ color: 0x2b3866, emissive: 0x0d1430 });
 
@@ -310,13 +316,24 @@
     g.userData.slot = slot;
     return g;
   };
-  M.loco = (color = P.blue) => {
+  // locomotive in an operator livery: body colour, stripe colour, 'hood' (road switcher) or 'cab' (full-width carbody)
+  M.loco = (color = P.blue, stripe = 0xf6f7fd, style = 'hood') => {
     const b = new MB();
     b.box(13, 0.5, 3.0, 0x2d3352, 0, 0.9, 0);
-    b.box(8, 2.6, 2.9, color, -1.8, 1.4, 0);
-    b.box(3.2, 3.4, 3.1, color, 4.2, 1.4, 0);
-    b.box(3.24, 0.9, 3.14, 0x26305e, 4.3, 3.0, 0);
-    b.box(13.1, 0.35, 3.14, 0xf6f7fd, 0, 1.6, 0);
+    if (style === 'cab') {
+      b.box(12.4, 3.4, 3.1, color, -0.2, 1.4, 0);
+      b.boxC(1.6, 2.2, 3.1, color, 6.4, 2.4, 0, 0, 0, 0.35);
+      b.box(1.2, 0.9, 3.16, 0x26305e, 5.6, 3.2, 0);
+      b.box(12.5, 0.45, 3.16, stripe, -0.2, 2.2, 0);
+      b.box(12.5, 0.25, 3.16, shade(color, 0.7), -0.2, 4.8, 0);
+      for (const fx of [-4, -1, 2]) b.box(1.6, 0.25, 2.2, 0x3a4166, fx, 4.85, 0);
+    } else {
+      b.box(8, 2.6, 2.9, color, -1.8, 1.4, 0);
+      b.box(3.2, 3.4, 3.1, color, 4.2, 1.4, 0);
+      b.box(3.24, 0.9, 3.14, 0x26305e, 4.3, 3.0, 0);
+      b.box(13.1, 0.35, 3.14, stripe, 0, 1.6, 0);
+      b.boxC(1.2, 0.3, 3.0, stripe, 6.0, 1.9, 0, 0, 0, 0.6);
+    }
     b.box(0.6, 0.6, 2.4, shade(color, 0.85), 6.0, 1.4, 0);
     b.box(0.1, 0.3, 0.5, 0xfff1b8, 6.32, 2.0, 0);
     for (const fx of [-4.5, -2.5, -0.5]) b.cyl(0.55, 0.55, 0.25, 0x3a4166, fx, 4.15, 0, 12);
@@ -449,18 +466,30 @@
     for (let wy = 5.2; wy < 10; wy += 1.7) b.box(9.12, 0.4, 13.12, 0xcfd5ee, -36, wy, 0);
     b.box(3, 5, 3, P.blue, -40, 12.5, 0);
     b.box(3.05, 0.6, 3.05, 0x26305e, -40, 17.0, 0);
-    // bow mast
+    // Bow equipment, bridge glazing, radar and protected deck walkways.
     b.box(0.5, 6, 0.5, 0xcfd5ee, 40, 3.5, 0);
+    b.box(4, 0.25, 0.4, P.white, -35, 16, 0);
+    b.box(0.3, 3.5, 0.3, P.white, -35, 14, 0);
+    b.box(0.2, 1, 2.8, 0x79c7ef, -32.4, 13.3, 0);
+    // Lifeboats hang off the accommodation; deck rails run outboard of the outer container rows (|z| ≤ 6.8).
+    for (const z of [-7.0, 7.0]) {
+      b.box(4, 1.1, 1.1, 0xf08c2a, -36, 7.8, z);
+      b.box(56, 0.12, 0.12, P.white, -1, 4.8, z); // parallel mid-body only: the hull narrows toward the bow
+      for (let x = -29; x <= 27; x += 4) b.box(0.1, 1, 0.1, P.white, x, 3.8, z);
+      b.cyl(0.6, 0.6, 0.4, 0x3a4166, 36, 4, z * 0.55, 10); // mooring winches, inside the bow flare
+    }
+    // hatch covers lie flush on the deck, so the bottom tier stands on them at deck height 3.8
+    for (let x = -23; x <= 27; x += 12.4) b.box(11.8, 0.06, 13.4, 0x9aa1c4, x, 3.76, 0);
     g.add(b.mesh());
     // container bays
     const stacks = [];
     const bayXs = [];
-    for (let x = -26; x <= 36; x += 6.2) bayXs.push(x);
+    for (let x = -23; x <= 27; x += 12.4) bayXs.push(x);
     for (const x of bayXs) for (let r = -2; r <= 2; r++) {
       const st = { x, z: r * 2.75, items: [] };
       const lv = WT.rint(1, 3);
       for (let l = 0; l < lv; l++) {
-        const c = M.container(WT.pick(M.CONT_COLORS), 5.8);
+        const c = M.container(WT.pick(M.CONT_COLORS), 11);
         c.position.set(x, 3.8 + l * 2.75, st.z);
         g.add(c);
         st.items.push(c);
@@ -536,6 +565,16 @@
     const g = new T.Group();
     const b = new MB();
     const C = P.blue, Y = 0xf0b429;
+    // Twin lattice beams: visible structural diagonals without blocking the working envelope.
+    const panels = Math.ceil(span / 5);
+    for (const z of [-4, 4]) for (let i = 0; i < panels; i++) {
+      const w = span / panels, x = -span / 2 + (i + 0.5) * w;
+      b.boxC(Math.hypot(w, 2.8), 0.18, 0.2, 0xb8c2dc, x, height + 1.3, z, 0, 0, (i % 2 ? -1 : 1) * Math.atan2(2.8, w));
+    }
+    for (const z of [-4.6, 4.6]) {
+      b.box(span, 0.15, 0.15, P.white, 0, height + 4, z);
+      for (let x = -span / 2; x <= span / 2; x += 4) b.box(0.12, 1.2, 0.12, P.white, x, height + 2.8, z);
+    }
     for (const sx of [-1, 1]) {
       const x = (sx * span) / 2;
       b.box(1.2, 1.0, 12, C, x, 0, 0);
@@ -546,6 +585,8 @@
     for (const z of [-4, 4]) b.box(span + 2, 1.6, 1.2, C, 0, height, z);
     b.box(span + 2, 0.3, 9.2, Y, 0, height + 1.6, 0);
     b.box(4, 2.6, 3, P.white, (span / 2) - 3, height + 1.9, 5.8);
+    b.box(3.6, 1, 0.15, 0x79c7ef, (span / 2) - 3, height + 2.7, 7.35);
+    for (let y = 1; y < height; y += 0.6) b.box(0.8, 0.08, 0.12, P.white, -span / 2, y, -5.6);
     g.add(b.mesh());
     const trolley = new T.Group();
     trolley.position.y = height;
@@ -557,7 +598,10 @@
     const spreader = new T.Group();
     const sb = new MB();
     sb.box(1.0, 0.5, 11.8, Y, 0, 0, 0);
-    sb.box(2.7, 0.35, 1.0, Y, 0, 0, 0);
+    for (const z of [-5.3, 5.3]) {
+      sb.box(2.7, 0.35, 0.6, Y, 0, 0, z);
+      for (const x of [-1.15, 1.15]) sb.box(0.3, 0.35, 0.3, 0x3a4166, x, -0.25, z);
+    }
     spreader.add(sb.mesh());
     g.add(spreader);
     const cable = new T.Mesh(new T.BoxGeometry(0.12, 1, 0.12), M.mat(0x3a4166));
@@ -591,6 +635,13 @@
     for (const x of [-6, 6]) b.box(1.2, 1.2, 11, C, x, H * 0.45, 1);
     for (const x of [-2.6, 2.6]) b.box(1.2, 2.0, 58, C, x, H, 12);
     b.box(6.4, 0.3, 58, 0xf0b429, 0, H + 2, 12);
+    for (const x of [-3.2, 3.2]) {
+      b.box(0.12, 0.12, 58, P.white, x, H + 3.5, 12);
+      for (let z = -15; z <= 39; z += 4.5) {
+        b.box(0.12, 1.3, 0.12, P.white, x, H + 2.2, z);
+        b.boxC(0.18, 0.18, 5, 0xb8c2dc, x, H + 1, z, 0.35, 0, 0);
+      }
+    }
     b.box(8, 4, 8, P.white, 0, H + 2, -10);
     b.box(1.2, 10, 1.2, C, 0, H + 2, 0);
     b.boxC(0.4, 0.4, 30, 0x9aa1c4, 0, H + 7, 18, -0.33, 0, 0);
@@ -606,8 +657,11 @@
     g.add(trolley);
     const spreader = new T.Group();
     const sb = new MB();
-    sb.box(6.2, 0.45, 1.0, 0xf0b429, 0, 0, 0);
-    sb.box(1.0, 0.35, 2.7, 0xf0b429, 0, 0, 0);
+    sb.box(11.8, 0.45, 1.0, 0xf0b429, 0, 0, 0);
+    for (const x of [-5.3, 5.3]) {
+      sb.box(0.6, 0.35, 2.7, 0xf0b429, x, 0, 0);
+      for (const z of [-1.15, 1.15]) sb.box(0.3, 0.35, 0.3, 0x3a4166, x, -0.25, z);
+    }
     spreader.add(sb.mesh());
     g.add(spreader);
     const cables = [0, 1].map(() => { const c = new T.Mesh(new T.BoxGeometry(0.12, 1, 0.12), M.mat(0x3a4166)); g.add(c); return c; });

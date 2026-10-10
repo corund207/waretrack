@@ -15,6 +15,8 @@ export async function open(siteDir, { width = 1600, height = 900, seed = 7 } = {
   });
   const page = await browser.newPage();
   await page.setViewport({ width, height });
+  // a fixed light theme, whatever the machine's dark-mode setting (README screenshots are light)
+  await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message + '\n' + e.stack));
   page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)/.test(m.text())) errors.push(m.text()); });
@@ -23,9 +25,18 @@ export async function open(siteDir, { width = 1600, height = 900, seed = 7 } = {
     let a = s >>> 0;
     Math.random = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }, seed);
+  await page.evaluateOnNewDocument(() => {
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (fn) => raf((time) => {
+      if (window.WT?.sim) WT.sim.paused = true;
+      fn(time);
+    });
+  });
   await page.goto(pathToFileURL(join(siteDir, 'index.html')).href);
   await page.waitForFunction(() => window.WT && WT.facilities && WT.G, { timeout: 60000 });
   await new Promise((r) => setTimeout(r, 1000));
+  // Test advances own the simulation clock; rendering must not insert unseeded timing-dependent steps.
+  await page.evaluate(() => WT.setPaused(true));
   return { browser, page, errors };
 }
 

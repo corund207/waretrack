@@ -1,0 +1,7 @@
+node_modules
+dist
+*.log
+.freebuff
+tests
+docs/previews
+__pycache__

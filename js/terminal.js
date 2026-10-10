@@ -1,5 +1,5 @@
-/* WareTrack – twin-crane container terminals: the shared engine behind the rail yards and the seaport.
-   Two cranes share one pair of rails. Trucks use a service lane with spots beside a bypass lane, so they can pass
+/* WareTrack – multi-crane container terminals: the shared engine behind the rail yards and the seaport.
+   Two or more cranes share one pair of rails, each working its own stretch of yard between moving split lines. Trucks use a service lane with spots beside a bypass lane, so they can pass
    each other. Every lift is planned ahead: the spot is picked next to the truck's box, the crane starts as soon as
    the truck clears the gate, and boxes still on a train or ship go straight from wagon or deck onto the truck. */
 (function () {
@@ -69,7 +69,7 @@
     return m;
   };
 
-  /* ================= twin-crane terminal ================= */
+  /* ================= multi-crane terminal ================= */
   const overlaps = (a, c) => a[1] > c.lo && a[0] < c.hi;
   class CraneTerminal extends WT.Facility {
     // lane: { srv, byp, spots: [x…] } — service-lane z, bypass-lane z, spot x positions
@@ -81,17 +81,20 @@
       this.directMoves = 0;
       this.docks = lane.spots.map((x, i) => ({ n: i + 1, x, z: lane.srv, truck: null, job: null, ops: ['pick', 'drop'] }));
     }
-    // cranes: crane meshes from M.gantry / M.quayCrane; homes: parking x at either end; pad: half claim width
+    // cranes: crane meshes from M.gantry / M.quayCrane, west to east; homes: their parking x (the end cranes park at
+    // the ends of the rails); pad: half claim width
     setupCranes(cranes, homes, pad, safe, speed) {
       this.cpad = pad; this.safe = safe; this.cspeed = speed;
       this.cranes = cranes.map((c, i) => {
-        Object.assign(c, { id: (this.craneTag || 'CR') + '-' + (i + 1), side: i ? 1 : -1, home: homes[i], task: 'Idle', lifts: 0, want: null, prio: 0, waited: 0, busy: false });
+        Object.assign(c, { id: (this.craneTag || 'CR') + '-' + (i + 1), idx: i, home: homes[i], task: 'Idle', lifts: 0, want: null, prio: 0, waited: 0, busy: false });
         c.group.position.x = c.home;
         c.lo = c.home - pad; c.hi = c.home + pad;
         return c;
       });
-      this.cranes[0].other = this.cranes[1];
-      this.cranes[1].other = this.cranes[0];
+      // only neighbours on the rails can ever meet
+      this.cranes.forEach((c, i) => { c.west = this.cranes[i - 1] || null; c.east = this.cranes[i + 1] || null; c.nbrs = [c.west, c.east].filter(Boolean); });
+      this.splits = homes.slice(1).map((h, i) => (homes[i] + h) / 2);
+      this.bias = this.splits.map(() => 0);
       this.crane = this.cranes[0];
     }
     startCranes() {
@@ -133,28 +136,32 @@
     stackable(s) { return !s.busy && s.items.length < 2 && !(s.items.length && (this.topOf(s).reserved || this.topOf(s).at === this)); }
 
     /* ----- crane rail claims ----- */
-    reach(c, x) { return c.side < 0 ? x <= c.other.home - 2 * this.cpad : x >= c.other.home + 2 * this.cpad; }
+    // a crane works between its neighbours' parking spots, so each can always back off home to make way
+    reach(c, x) { const P2 = 2 * this.cpad; return (!c.west || x >= c.west.home + P2) && (!c.east || x <= c.east.home - P2); }
     shrink(c) { const x = c.group.position.x; c.lo = x - this.cpad; c.hi = x + this.cpad; }
-    // move just far enough toward our own end to clear the stretch the other crane is asking for
-    *makeWay(c, want) {
-      const x = c.group.position.x, P = this.cpad;
-      const target = c.side < 0 ? Math.max(c.home, Math.min(x, want[0] - P - 0.5)) : Math.min(c.home, Math.max(x, want[1] + P + 0.5));
+    // move just far enough away from neighbour o to clear the stretch it is asking for — never past our own end of the
+    // rails, nor into the claim of the crane on our other side
+    *makeWay(c, o) {
+      const x = c.group.position.x, P = this.cpad, want = o.want;
+      if (!want) { yield* WT.sleep(0.1); return; }
+      const target = o === c.west ? Math.min(c.east ? c.east.lo - P : c.home, Math.max(x, want[1] + P + 0.5)) : Math.max(c.west ? c.west.hi + P : c.home, Math.min(x, want[0] - P - 0.5));
       if (Math.abs(target - x) < 0.3) { yield* WT.sleep(0.2); return; }
       c.lo = Math.min(x, target) - P; c.hi = Math.max(x, target) + P;
-      c.task = 'Making way for ' + c.other.id;
+      c.task = 'Making way for ' + o.id;
       yield* CR.transfer(c, target, c.tx, this.safe, this.safe, this.cspeed);
       this.shrink(c);
     }
     *acquire(c, xs, prio) {
       while (true) {
-        const x = c.group.position.x, P = this.cpad, lo = Math.min(x, ...xs) - P, hi = Math.max(x, ...xs) + P, o = c.other;
-        if (hi <= o.lo || lo >= o.hi) { c.lo = lo; c.hi = hi; c.want = null; c.waited = 0; return; }
+        const x = c.group.position.x, P = this.cpad, lo = Math.min(x, ...xs) - P, hi = Math.max(x, ...xs) + P;
+        const hit = c.nbrs.filter((o) => hi > o.lo && lo < o.hi);
+        if (!hit.length) { c.lo = lo; c.hi = hi; c.want = null; c.waited = 0; return; }
         if (!c.want) c.waited = 0;
         c.want = [lo, hi]; c.prio = prio;
-        c.task = 'Waiting for ' + o.id;
-        // both waiting on each other: truck work goes first (ties: the west crane), the other steps aside
-        const mutual = o.want && overlaps(o.want, c);
-        if (mutual && (o.prio > prio || (o.prio === prio && c.side > 0))) yield* this.makeWay(c, o.want);
+        c.task = 'Waiting for ' + hit[0].id;
+        // both waiting on each other: truck work goes first (ties: the more westerly crane), the other steps aside
+        const o = hit.find((o) => o.want && overlaps(o.want, c) && (o.prio > prio || (o.prio === prio && o === c.west)));
+        if (o) yield* this.makeWay(c, o);
         else { yield* WT.sleep(0.1); c.waited += 0.1; }
       }
     }
@@ -165,32 +172,34 @@
     addJob(j) { j.done = false; j.since = WT.sim.minutes; j.t0 = WT.TR.clock; this.jobs.push(j); return j; }
     *waitJobs(list) { while (list.some((j) => !j.done)) yield; }
 
-    /* ----- the cranes work as one: a moving split line shares the yard between them -----
-       The line sits at the median of all queued work, so each crane gets about half. A crane plans only lifts that
-       start and end on its side, so the two never meet; a lift that genuinely spans both sides is allowed after a
-       short wait and handled with rail claims. */
+    /* ----- the cranes work as one: moving split lines share the yard between them -----
+       With n cranes the n-1 lines sit at the quantiles of all queued work, so each crane gets about an equal share. A
+       crane plans only lifts that start and end in its own stretch, so neighbours never meet; a lift that genuinely
+       spans two stretches is allowed after a short wait and handled with rail claims. */
     jobX(j) { return j.at !== undefined ? j.at : j.where ? j.where() : undefined; }
     updateSplit(dt) {
-      const [w, e] = this.cranes, P = this.cpad;
+      const C = this.cranes, n = C.length, P = this.cpad;
       const xs = this.jobs.map((j) => this.jobX(j)).filter((x) => x !== undefined).sort((a, b) => a - b);
-      const mid = (w.home + e.home) / 2;
-      let target = mid;
-      if (xs.length >= 2) {
-        // between the two middle jobs: half the queue each side
-        const k = xs.length >> 1;
-        target = (xs[k - 1] + xs[k]) / 2;
-      } else if (xs.length === 1) target = xs[0] < mid ? xs[0] + 2 * P : xs[0] - 2 * P;
-      // feedback: a crane starved of work while the other has a queue is handed more of the yard
-      this.bias = WT.clamp((this.bias || 0) + ((w.starved && !e.starved ? 1 : 0) - (e.starved && !w.starved ? 1 : 0)) * 10 * dt, -60, 60) * Math.pow(0.97, dt);
-      target = WT.clamp(target + this.bias, w.home + 2 * P, e.home - 2 * P);
-      if (this.split === undefined) this.split = mid;
-      // the line only moves through the gap between the cranes' current claims, so no one is caught on the wrong side
-      if (w.hi <= e.lo) target = WT.clamp(target, w.hi, e.lo);
-      else target = this.split;
-      this.split += WT.clamp(target - this.split, -12 * dt, 12 * dt);
+      for (let k = 0; k < n - 1; k++) {
+        const w = C[k], e = C[k + 1], mid = (w.home + e.home) / 2;
+        let target = mid;
+        if (xs.length >= 2) {
+          // (k+1)/n of the queue west of this line
+          const q = (xs.length * (k + 1)) / n;
+          target = (xs[WT.clamp(Math.ceil(q) - 1, 0, xs.length - 1)] + xs[WT.clamp(Math.floor(q), 0, xs.length - 1)]) / 2;
+        } else if (xs.length === 1) target = xs[0] < mid ? xs[0] + 2 * P : xs[0] - 2 * P;
+        // feedback: a crane starved of work while its neighbour has a queue is handed more of the yard
+        this.bias[k] = WT.clamp(this.bias[k] + ((w.starved && !e.starved ? 1 : 0) - (e.starved && !w.starved ? 1 : 0)) * 10 * dt, -60, 60) * Math.pow(0.97, dt);
+        target = WT.clamp(target + this.bias[k], w.home + 2 * P, e.home - 2 * P);
+        // a line only moves through the gap between its two cranes' current claims, so no one is caught on the wrong side
+        if (w.hi <= e.lo) target = WT.clamp(target, w.hi, e.lo);
+        else target = this.splits[k];
+        this.splits[k] += WT.clamp(target - this.splits[k], -12 * dt, 12 * dt);
+      }
     }
-    // west crane takes the yard up to the line, east crane beyond it (rail claims keep them apart at the seam)
-    inZone(c, x) { return c.side < 0 ? x <= this.split : x > this.split; }
+    // each crane takes the yard between the lines either side of it (rail claims keep neighbours apart at the seams)
+    inZone(c, x) { return (!c.west || x > this.splits[c.idx - 1]) && (!c.east || x <= this.splits[c.idx]); }
+    zoneOf(x) { let i = 0; while (i < this.splits.length && x > this.splits[i]) i++; return i; }
     allowed(c, x) { return this.reach(c, x) && (c.relaxed || this.inZone(c, x)); }
 
     // carry out one lift: claim rail, run out ahead of a truck if needed, pick, place
@@ -229,12 +238,12 @@
     }
     pickJob(c) {
       let job = null, lift = null, best = Infinity;
-      const x = c.group.position.x, o = c.other, P = this.cpad;
-      // rail the other crane is waiting for is off limits for new work until it has been served
-      const blocked = (p) => o.want && Math.max(x, p.fx, p.tx) + P > o.want[0] && Math.min(x, p.fx, p.tx) - P < o.want[1];
+      const x = c.group.position.x, P = this.cpad;
+      // rail a neighbour is waiting for is off limits for new work until it has been served
+      const blocked = (p) => c.nbrs.some((o) => o.want && Math.max(x, p.fx, p.tx) + P > o.want[0] && Math.min(x, p.fx, p.tx) - P < o.want[1]);
       for (const relaxed of [false, true]) {
-        // cross-yard lifts only while the other crane is free to step aside
-        if (relaxed && o.busy) break;
+        // cross-yard lifts only while the neighbours are free to step aside
+        if (relaxed && c.nbrs.some((o) => o.busy)) break;
         c.relaxed = relaxed;
         for (const j of this.jobs) {
           if (j.done) continue;
@@ -289,9 +298,9 @@
     *craneWorker(c) {
       let idleT = 0;
       while (true) {
-        const o = c.other;
-        // the other crane has been kept waiting on rail we hold: step aside before taking more work
-        if (o.want && o.waited > 2 && overlaps(o.want, c)) { yield* this.makeWay(c, o.want); continue; }
+        // a neighbour has been kept waiting on rail we hold: step aside before taking more work
+        const kept = c.nbrs.find((o) => o.want && o.waited > 2 && overlaps(o.want, c));
+        if (kept) { yield* this.makeWay(c, kept); continue; }
         const pick = this.pickJob(c);
         c.starved = !pick && this.jobs.some((j) => !j.done && !(j.truck && !j.truck.curLeg));
         if (pick) {
@@ -302,11 +311,12 @@
           WT.G && WT.G.earn(this.liftValue || 6000, this);
           continue;
         }
-        if (o.want && overlaps(o.want, c)) { yield* this.makeWay(c, o.want); continue; }
+        const asking = c.nbrs.find((o) => o.want && overlaps(o.want, c));
+        if (asking) { yield* this.makeWay(c, asking); continue; }
         idleT += 0.2;
         // never just parked: run out to where the next work will be, else tidy our side of the yard
         const nx = this.nextWorkX(c), x = c.group.position.x;
-        const free = (t) => !(o.want && Math.max(x, t) + this.cpad > o.want[0] && Math.min(x, t) - this.cpad < o.want[1]);
+        const free = (t) => !c.nbrs.some((o) => o.want && Math.max(x, t) + this.cpad > o.want[0] && Math.min(x, t) - this.cpad < o.want[1]);
         if (nx !== undefined && Math.abs(nx - x) > 6 && free(nx)) {
           c.task = 'Positioning';
           yield* this.acquire(c, [nx], 0);
@@ -314,12 +324,13 @@
           this.shrink(c);
           continue;
         }
-        if (idleT > 2 && !o.want) {
+        if (idleT > 2 && !c.nbrs.some((o) => o.want)) {
           const t = this.tidyLift(c);
           if (t) { idleT = 0; yield* this.runLift(c, t, 'Restacking near truck spots', 0); this.restacks = (this.restacks || 0) + 1; continue; }
         }
-        // nothing on our side: drift back toward the middle of our half, ready for the next call
-        const home = c.side < 0 ? (c.home + this.split - this.cpad) / 2 : (this.split + this.cpad + c.home) / 2;
+        // nothing on our side: drift back toward the middle of our stretch, ready for the next call
+        const zl = c.west ? this.splits[c.idx - 1] + this.cpad : c.home, zr = c.east ? this.splits[c.idx] - this.cpad : c.home;
+        const home = (zl + zr) / 2;
         if (Math.abs(home - x) > 10 && idleT > 3 && free(home)) {
           c.task = 'Positioning';
           yield* this.acquire(c, [home], 0);
@@ -333,13 +344,13 @@
     }
 
     // lift a box (at world wx, wz) into the stack: lowest free slot this crane can reach, near the source,
-    // away from the other crane
+    // away from the neighbouring cranes
     stackLift(c, mesh, wx, wz, top, commit, fromReady) {
       if (!this.reach(c, wx)) return null;
-      const o = c.other, P = this.cpad;
+      const P = this.cpad;
       const cands = this.slots.filter((s) => this.stackable(s) && this.allowed(c, s.x));
       if (!cands.length) return null;
-      const score = (s) => s.items.length * 30 + Math.abs(s.x - wx) + (s.x > o.lo - P && s.x < o.hi + P ? 60 : 0);
+      const score = (s) => s.items.length * 30 + Math.abs(s.x - wx) + (c.nbrs.some((o) => s.x > o.lo - P && s.x < o.hi + P) ? 60 : 0);
       const s = cands.reduce((a, b) => (score(b) < score(a) ? b : a));
       return {
         slot: s, fx: wx, tx: s.x, fromT: this.ct(wz), toT: this.ct(s.z), fromReady,
@@ -376,9 +387,10 @@
     reserveFor(t, leg) {
       const free = this.docks.filter((d) => !d.truck);
       if (!free.length) return null;
-      const mid = (this.cranes[0].home + this.cranes[1].home) / 2;
-      const side = (x) => Math.sign(x - mid) || 1;
-      const load = (x) => this.docks.filter((o) => o.truck && side(o.x) === side(x)).length * 18 + this.jobs.filter((j) => j.truck && j.at !== undefined && side(j.at) === side(x)).length * 6;
+      const mid = (this.cranes[0].home + this.cranes[this.cranes.length - 1].home) / 2;
+      // balance across the cranes: spots in a crane's stretch weigh by the truck work already queued there
+      const z = (x) => this.zoneOf(x);
+      const load = (x) => this.docks.filter((o) => o.truck && z(o.x) === z(x)).length * 18 + this.jobs.filter((j) => j.truck && j.at !== undefined && z(j.at) === z(x)).length * 6;
       let workX;
       if (leg.op === 'pick') {
         const want = leg.cont || this.slots.map((s) => this.topOf(s)).find((c) => c && this.isImport(c) && !c.reserved);
@@ -462,7 +474,7 @@
       return [['Cranes', this.cranes.map((c) => `${c.id}: ${c.carry ? 'Lifting' : c.task}`).join(' · ')],
         ['Crane lifts', `${WT.fmtNum(this.moves)} (${this.cranes.map((c) => c.lifts).join(' + ')}) · ${this.directMoves} direct`],
         ['Truck spots', this.docks.map((d) => (d.truck ? '■' : '□')).join(' ') + ` · ${this.jobs.length} jobs queued`],
-        ['Yard split', `${Math.round((this.split || 0) - this.A)} m from centre · ${this.restacks || 0} restacks`]];
+        ['Yard split', `${this.splits.map((x) => Math.round(x - this.A)).join(' / ')} m from centre · ${this.restacks || 0} restacks`]];
     }
   }
   WT.CraneTerminal = CraneTerminal;

@@ -13,6 +13,8 @@ const ok = (msg) => console.log('✓ ' + msg);
 const version = readFileSync(join(root, 'js/core.js'), 'utf8').match(/WT\.VERSION = '([^']+)'/)?.[1];
 if (!version) fail('WT.VERSION not found in js/core.js');
 else ok(`WT.VERSION = ${version}`);
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+if (pkg !== version) fail(`package.json version ${pkg} does not match WT.VERSION ${version}`);
 
 for (const f of readdirSync(join(root, 'js')).filter((f) => f.endsWith('.js'))) {
   try { execFileSync(process.execPath, ['--check', join(root, 'js', f)], { stdio: 'pipe' }); } catch (e) { fail(`syntax error in js/${f}\n${e.stderr}`); }

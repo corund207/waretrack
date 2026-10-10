@@ -132,23 +132,25 @@
 
   /* ---------- containers ---------- */
   class Container extends Entity {
-    // openMat: an open-frame box for that material, its load visible (and craned) in the open
+    // openMat: an open box for that material, its load visible (and craned) in the open — a full-height
+    // open-top bin for bulk heaps (ore, coal, sand, grain…), a low-walled flat-rack frame for everything else
     constructor(color, len = 11, mesh, openMat) {
       super();
       this.kind = 'container';
       this.id = WT.nextContainerId();
       this.len = len;
       this.open = openMat || null;
-      this.size = (len > 8 ? "40'" : "20'") + (this.open ? (M.loadKind(this.open) === 'heap' ? ' open-top' : ' flat-rack') : len > 8 ? ' HC' : ' DV');
+      this.openTopBin = !!this.open && M.loadKind(this.open) === 'heap';
+      this.size = (len > 8 ? "40'" : "20'") + (this.open ? (this.openTopBin ? ' open-top' : ' flat-rack') : len > 8 ? ' HC' : ' DV');
       this.product = WT.pick(WT.PRODUCTS);
       this.weight = WT.rint(len > 8 ? 9000 : 5000, len > 8 ? 26000 : 18000);
       this.seal = 'SL' + WT.rint(100000, 999999);
       this.status = 'Stored';
       this.loc = '';
       const col = color === null || color === undefined ? WT.pick(M.CONT_COLORS) : color;
-      this.mesh = mesh || (this.open ? M.openFrame(col, len) : M.container(col, len));
+      this.mesh = mesh || (this.openTopBin ? M.openTopBin(col, len, this.open) : this.open ? M.openFrame(col, len) : M.container(col, len));
       if (this.open) {
-        this.load = new M.Load(this.open, len - 0.5);
+        this.load = new M.Load(this.open, len - 0.5, this.mesh.userData.heapH);
         this.load.g.position.y = 0.25;
         this.mesh.add(this.load.g);
       }

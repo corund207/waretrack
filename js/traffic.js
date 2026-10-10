@@ -108,6 +108,8 @@
           if (dx * dx + dz * dz < rr2) { hit = samp[k + 2]; break; }
         }
       }
+      // something behind us heading the same way can never block us (and an overlapping pair always separates)
+      if (hit >= 0 && Math.cos(a.h - o.actor.h) > 0.7 && (o.actor.x - a.x) * ch + (o.actor.z - a.z) * sh < -0.5) hit = -1;
       if (hit >= 0) {
         // a truck manoeuvring onto a reverse dock claims room behind it
         const gap = o.yieldGap && Math.cos(a.h - o.actor.h) > 0.5 ? o.yieldGap : 1.6;
@@ -255,6 +257,21 @@
   }
   // is the stretch [s0, s1] of v's path free of stopped / slow vehicles?
   function roomOn(v, s0, s1) {
+    if (s0 >= v.path.len - 0.5) {
+      // past the end of this path (pulling out of a plot): check straight ahead from the end
+      const e = v.path.at(v.path.len), others = TR.nearby(e.x, e.z, 30, tmpG);
+      for (let k = s0 - v.path.len; k <= s1 - v.path.len + 6; k += 1.6) {
+        const px = e.x + Math.cos(e.a) * k, pz = e.z + Math.sin(e.a) * k;
+        for (const o of others) {
+          if (o === v || o.actor.speed > 2.5) continue;
+          // Honor the same circular-wait resolution used on the in-path portion.
+          const gh = v.ghost.get(o);
+          if (gh && gh > TR.clock) continue;
+          for (let q = 0; q < o.bodies.length; q += 2) { const dx = px - o.bodies[q], dz = pz - o.bodies[q + 1]; if (dx * dx + dz * dz < (v.half + o.r + 2.5) ** 2) return o; }
+        }
+      }
+      return null;
+    }
     const p0 = v.path.at((s0 + s1) / 2);
     const others = TR.nearby(p0.x, p0.z, (s1 - s0) / 2 + 12, tmpG);
     for (let s = s0; s <= s1; s += 1.6) {
@@ -308,6 +325,20 @@
     const path = WT.buildPath(pts, o.radius === undefined ? (v.kind === 'truck' ? TR.TRUCK_R : 5) : o.radius);
     v.path = path; v.s = 0; v.driving = true;
     const stops = stopsFor(path);
+    // where this path leaves a plot onto a public road: hold at the exit until the whole crossing is clear
+    const merges = [];
+    for (let q = 0, prev = roadClass(path.at(0).x, path.at(0).z); q <= path.len; q += 1) {
+      const p = path.at(q), cl = roadClass(p.x, p.z);
+      if (prev === 1 && cl >= 2) merges.push({ s: q, ok: false });
+      prev = cl;
+    }
+    // a path that ends at the plot edge would leave the cab sticking into the road: stop nose-at-kerb instead
+    {
+      const e = path.at(path.len);
+      if (roadClass(e.x, e.z) === 1) for (let k = 1; k <= v.front + 2; k++) {
+        if (roadClass(e.x + Math.cos(e.a) * k, e.z + Math.sin(e.a) * k) >= 2) { merges.push({ s: path.len + k, ok: false }); break; }
+      }
+    }
     const vmax = o.speed || 16, acc = o.accel || 4.5, latA = o.latAccel || 4;
     const fwdFront = v.front;
     if (o.reverse) v.front = v.rear || 7.8; // when backing up, the trailer end leads
@@ -353,6 +384,17 @@
         else if (d < 2.5) { st.inside = true; st.j.occ.set(v, st); }
         break;
       }
+      // don't block the road: pull out of a plot only when the lanes we cross and the one we join have room
+      for (const m of merges) {
+        if (m.ok) continue;
+        const d = m.s - v.front - v.s;
+        if (d < -1) { m.ok = true; continue; }
+        if (d > (a.speed * a.speed) / (2 * DEC) + 8) break;
+        const o = roomOn(v, m.s, Math.min(path.len, m.s + v.front + (v.rear || 2) + 16));
+        if (o) { target = Math.min(target, Math.sqrt(2 * DEC * Math.max(0, d))); boxWait = boxWait || o; v.why = v.why || 'Waiting to pull out'; }
+        else m.ok = true;
+        break;
+      }
       target = Math.min(target, TR.limit(v));
       if (!v.blocker && boxWait) v.blocker = boxWait;
       // deadlock breaker: only for genuine circular waits (or a lane blocked by something parked for ages)
@@ -360,7 +402,7 @@
         v.waitT += dt;
         if (v.waitT > 6) {
           let o = v.blocker, cyc = false, parked = false;
-          for (let i = 0; i < 8 && o; i++) {
+          for (let i = 0; i < 20 && o; i++) {
             if (o === v) { cyc = true; break; }
             if (!o.driving) { parked = true; break; }
             // a truck waiting for a bay only gets driven around by crossing traffic, never by the queue behind it
@@ -412,7 +454,8 @@
       this.kind = cls;
       this.variant = o.variant || 'box';
       this.carrier = o.carrier || WT.pick(WT.CARRIERS);
-      this.id = cls === 'car' ? 'CAR-' + WT.rint(100, 999) : cls === 'bus' ? 'BUS-' + WT.rint(10, 99) : this.variant === 'mixer' ? 'MIX-' + WT.rint(10, 99) : this.variant === 'dump' ? 'DMP-' + WT.rint(10, 99) : WT.nextTruckId();
+      this.id = cls === 'car' ? 'CAR-' + WT.rint(100, 999) : cls === 'bus' ? 'BUS-' + WT.rint(10, 99) : this.variant === 'mixer' ? 'MIX-' + WT.rint(10, 99) : this.variant === 'dump' ? 'DMP-' + WT.rint(10, 99) : this.variant === 'mover' ? o.id || WT.nextMoverId() : WT.nextTruckId();
+      this.home = o.home || null; // the yard a mover returns its empty to
       this.legs = o.legs || [];
       this.plan = o.plan || null;
       this.spawnX = o.spawnX;
@@ -423,11 +466,12 @@
       this.status = 'En route';
       this.where = 'Highway';
       this.loaded = 0; this.total = 0;
-      this.driver = WT.pick(WT.DRIVERS);
+      this.driver = this.variant === 'mover' ? 'Autonomous (fleet control)' : WT.pick(WT.DRIVERS);
       this.trailer = o.trailer || (this.variant === 'flat' ? 'flat' : this.variant === 'tanker' ? 'tanker' : 'box');
       if (cls === 'car') this.mesh = M.carKind(WT.pick(M.CAR_COLORS), o.carKind || WT.pick(M.CAR_KINDS));
       else if (cls === 'bus') this.mesh = M.bus(WT.pick([0x2f56e0, 0x1aa6b7, 0xd9434b]));
       else if (this.variant === 'mixer') this.mesh = M.mixer();
+      else if (this.variant === 'mover') this.mesh = M.mover({ deck: this.trailer, color: this.carrier.cab });
       else this.mesh = M.rig({ cab: this.carrier.cab, stripe: this.carrier.stripe, label: this.carrier.name, trailer: this.variant === 'dump' ? 'dump' : this.trailer, style: Math.random() < 0.4 ? 'conv' : 'cabover' });
       if (!this.mesh.userData.cargo) { const c = new T.Group(); c.position.set(-2, 1.35, 0); this.mesh.add(c); this.mesh.userData.cargo = c; }
       if (o.container) this.load(o.container);
@@ -467,13 +511,13 @@
     radius() { return this.kind === 'car' ? 3 : 8; }
     card() {
       const st = /Load|Unload|Stuff|Destuff|Pump/.test(this.status) && this.total ? `${this.status} ${this.loaded}/${this.total}` : this.status;
-      const icon = { car: '🚗', bus: '🚌', mixer: '🚧', dump: '🚧', flat: '🚛', tanker: '🛢️' }[this.kind === 'truck' ? this.variant : this.kind] || '🚚';
+      const icon = { car: '🚗', bus: '🚌', mixer: '🚧', dump: '🚧', flat: '🚛', tanker: '🛢️', mover: '🤖' }[this.kind === 'truck' ? this.variant : this.kind] || '🚚';
       const cargo = this.container ? `${this.container.id} · ${WT.SUP.describe(this.container)}` : this.cargo ? `${WT.SUP.MAT[this.cargo.mat].name} · ${this.cargo.qty} t` : this.total ? `${this.loaded}/${this.total} pallets` : '—';
       return {
-        kicker: (this.kind === 'car' ? 'Car' : this.kind === 'bus' ? 'Staff shuttle' : this.variant === 'mixer' ? 'Concrete mixer' : 'Truck · ' + this.trailer) + ' · ' + (this.kind === 'car' ? 'Traffic' : this.carrier.name),
+        kicker: (this.kind === 'car' ? 'Car' : this.kind === 'bus' ? 'Staff shuttle' : this.variant === 'mixer' ? 'Concrete mixer' : this.variant === 'mover' ? 'Autonomous container mover' : 'Truck · ' + this.trailer) + ' · ' + (this.kind === 'car' ? 'Traffic' : this.carrier.name),
         title: this.id, sub: this.mission, icon, iconBg: '#' + this.carrier.cab.toString(16).padStart(6, '0'),
         status: st, statusTone: WT.toneFor(this.status), where: this.where,
-        rows: [['Driver', this.driver], ['Order', this.po ? `${this.po.id} → ${this.po.to.id}` : '—'], ['Cargo', this.ulds.length ? this.ulds.map((u) => u.id).join(', ') + ' · ' + WT.SUP.describe(this.ulds[0]) : cargo], ['Next stops', [...(this.curLeg ? [this.curLeg] : []), ...this.legs].map((l) => l.fac.id).join(' → ') || 'Exit'],
+        rows: [[this.variant === 'mover' ? 'Control' : 'Driver', this.driver], ['Order', this.po ? `${this.po.id} → ${this.po.to.id}` : '—'], ['Cargo', this.ulds.length ? this.ulds.map((u) => u.id).join(', ') + ' · ' + WT.SUP.describe(this.ulds[0]) : cargo], ['Next stops', [...(this.curLeg ? [this.curLeg] : []), ...this.legs].map((l) => l.fac.id).join(' → ') || 'Exit'],
           ['Speed', Math.round(this.actor.speed * 3.6) + ' km/h'], ['Traffic', this.why ? this.why + (this.blocker ? ' · ' + this.blocker.id : '') : this.yieldTo ? 'Yielding to ' + this.yieldTo.id : this.blocker ? 'Queued behind ' + this.blocker.id : 'Clear road'],
           ['Shipment', this.shipment ? '#' + this.shipment.id : '—']],
       };
@@ -509,8 +553,10 @@
     }
     let based = false;
     if (t.startAt) {
-      // plant-based shuttle: starts parked at its bay
+      // based at its first stop (a mover in its charging bay): it wakes up there once the lane around it is clear
       const leg = t.legs[0], ip = leg.fac.inPath(leg.dock), p1 = ip[ip.length - 1], p0 = ip[ip.length - 2];
+      t.status = 'Charging · job assigned';
+      while (!clearAt(p1[0], p1[1], 14)) yield* WT.sleep(0.5);
       a.place(p1[0], p1[1], Math.atan2(p1[1] - p0[1], p1[0] - p0[0]));
       based = true;
     } else {
@@ -535,13 +581,16 @@
     }
     TR.add(t);
     WT.scene.add(t.mesh);
-    t.mesh.scale.setScalar(0.01);
-    WT.spawn(WT.tween(0.5, (k) => t.mesh.scale.setScalar(Math.max(0.01, k))));
-    const opts = { speed: t.kind === 'car' ? 21 : 17 };
+    if (!t.noFade) {
+      t.mesh.scale.setScalar(0.01);
+      WT.spawn(WT.tween(0.5, (k) => t.mesh.scale.setScalar(Math.max(0.01, k))));
+    }
+    // autonomous movers are low, electric and never tire: quicker off the line, faster through bends and on the straight
+    const opts = t.variant === 'mover' ? { speed: 24, accel: 6.5, latAccel: 5.5 } : { speed: t.kind === 'car' ? 21 : 17 };
     let first = true;
     while (true) {
       let leg = t.legs.shift();
-      if (!leg && t.plan) { const more = t.plan(t); t.plan = null; if (more) { t.legs.push(...more); leg = t.legs.shift(); } }
+      if (!leg && t.plan) { const plan = t.plan; t.plan = null; const more = plan(t); if (more) { t.legs.push(...more); leg = t.legs.shift(); } } // a plan may re-arm itself
       if (!leg) break;
       t.curLeg = leg;
       t.status = 'En route';
@@ -598,6 +647,7 @@
       }
       t.yieldGap = 0;
       yield* leg.fac.serve(t, leg);
+      if (t.parked) break; // a mover back in its charging bay
       t.status = 'Departing';
       let released = false;
       yield* TR.drive(t, [[a.x, a.z], ...leg.fac.outPath(leg.dock)], Object.assign({}, opts, { onTick: (s) => { if (!released && s > 18) { leg.fac.release(leg.dock); released = true; } } }));
@@ -605,6 +655,11 @@
       pos = leg.fac.gateOut;
       t.curLeg = null;
       if (t.shipment && t.shipment.stage < 3 && leg.op === 'load') WT.advanceShipment(t.shipment, 3);
+    }
+    if (t.parked) {
+      // the depot now shows the mover parked on charge; the road vehicle is retired until its next job
+      yield* despawn(t);
+      return;
     }
     t.status = t.busy ? 'Leaving park' : 'Passing through';
     t.where = 'Highway';

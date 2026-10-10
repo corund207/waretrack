@@ -1,19 +1,23 @@
 /* WareTrack – production plants
    Intermediate plants (steel mill, copper refinery, chemical plant, sawmill, glass works) turn raw imports into
-   intermediates and ship them to assembly plants by in-park transfer trucks.
+   intermediates and ship them to assembly plants by in-park container movers.
+   Receiving is a through road: movers enter at the north gate, run down the bypass lane, pull alongside a bay in the
+   service lane beside the dock wall, are unloaded sideways onto the dock belt and drive on out of the south gate.
    Assembly plants consume inputs and push finished cartons over a belt bridge into their paired warehouse.
    Inputs only rise when a purchase order is physically delivered. */
 (function () {
   const T = THREE, M = WT.M, W = WT.W, FX = WT.FX;
-  const DOCKS = [38, 26, 14, 2, -10];
-  const PARK_X = 57.8, WALL_X = 66, LANE_X = 43;
-  const PREFIX = { 'Steel Mill': 'STL', 'Copper Refinery': 'CU', 'Chemical Plant': 'CHM', Sawmill: 'SAW', 'Glass Works': 'GLS' };
+  // bay positions along the service lane, 16 m apart so a parked mover (13 m) never blocks the next bay
+  const DOCKS = [36, 20, 4, -12];
+  const WALL_X = 66, LANE_X = 43, SRV_X = 56, BELT_X = 59;
+  const PREFIX = { 'Steel Mill': 'STL', 'Copper Refinery': 'CU', 'Chemical Plant': 'CHM', Sawmill: 'SAW', 'Glass Works': 'GLS', 'Aluminium Smelter': 'ALU' };
   const ACCENT = { Electronics: 0x2f56e0, Appliances: 0x1aa6b7, 'Auto Parts': 0x6a7194, Beverages: 0x3a6ff7, Furniture: 0xb5543d, Pharma: 0x37b26c,
-    'Steel Mill': 0x4a5578, 'Copper Refinery': 0xc87533, 'Chemical Plant': 0x37b26c, Sawmill: 0x9c7a5b, 'Glass Works': 0x1aa6b7 };
+    'Steel Mill': 0x4a5578, 'Copper Refinery': 0xc87533, 'Chemical Plant': 0x37b26c, Sawmill: 0x9c7a5b, 'Glass Works': 0x1aa6b7, 'Aluminium Smelter': 0x9aa1c4 };
   const WALLS = [['#e9ecf7', '#d3d8ec'], ['#dfe6f2', '#c7d0e6'], ['#f1ede6', '#ddd6ca']];
   const IN_POS = [[13, 31], [28, 31], [13, 13]];
   const PROC_NAME = { smelter: 'Foundry + assembly', press: 'Moulding + assembly', tanks: 'Mixing + bottling', sawmill: 'Woodshop + upholstery',
-    blast: 'Blast furnace + coil line', refinery: 'Smelting + wire drawing', chem: 'Distillation + polymerisation', saw: 'Debarking + sawing', glassworks: 'Melting + float line' };
+    blast: 'Blast furnace + coil line', refinery: 'Smelting + wire drawing', chem: 'Distillation + polymerisation', saw: 'Debarking + sawing', glassworks: 'Melting + float line',
+    potline: 'Electrolysis potline + ingot casting' };
 
   class Factory extends WT.Facility {
     constructor(plot, partner, recipeName) {
@@ -26,12 +30,13 @@
       this.partner = this.intermediate ? null : partner || null;
       this.line = { name, colors: this.recipe.colors };
       this.name = this.intermediate ? name : name + ' Plant';
-      this.docks = DOCKS.map((z, i) => ({ n: i + 1, z, truck: null, ops: this.intermediate && i >= 3 ? ['ship'] : ['unload'] }));
+      this.docks = DOCKS.map((z, i) => ({ n: i + 1, z, truck: null, ops: this.intermediate && i >= 2 ? ['ship'] : ['unload'] }));
       this.income = 14000;
       this.site = { x: 84, z: 0, w: 36, d: 82, h: 14 };
       this.produced = 0;
       this.cap = this.intermediate ? 120 : 60;
       this.stock = {};
+      // every plant is commissioned with half a store of each input; after that only delivered orders refill it
       this.recipe.in.forEach((m) => (this.stock[m] = this.cap * 0.5));
       this.outStock = this.intermediate ? 14 : 0;
       this.outCap = 80;
@@ -46,11 +51,11 @@
     // trucks without a bay wait on the entry road inside the gate
     stagePath() { return [[0, 46], [26, 46]].map(([x, z]) => this.toWorld(x, z)); }
     get stageSkip() { return 1; }
-    // forward down the one-way apron lane past the bay ...
-    inPath(d) { return [[0, 46], [LANE_X, 46], [LANE_X, d.z - 11]].map(([x, z]) => this.toWorld(x, z)); }
-    // ... then reverse in, rear doors to the dock door
-    dockPath(d) { return [[LANE_X, d.z - 11], [LANE_X, d.z], [PARK_X, d.z]].map(([x, z]) => this.toWorld(x, z)); }
-    outPath(d) { return [[PARK_X, d.z], [LANE_X + 4, d.z], [LANE_X, d.z - 7], [LANE_X, -46], [0, -46]].map(([x, z]) => this.toWorld(x, z)); }
+    get stageRoom() { return 2; } // deliveries booked beyond the free bays: they queue on the entry road
+    // through road: down the bypass lane, ease across into the service lane and stop alongside the bay ...
+    inPath(d) { return [[0, 46], [LANE_X, 46], [LANE_X, Math.min(46, d.z + 16)], [SRV_X, d.z + 4], [SRV_X, d.z]].map(([x, z]) => this.toWorld(x, z)); }
+    // ... then carry straight on, back across to the bypass and out of the far gate — nobody ever reverses
+    outPath(d) { return [[SRV_X, d.z], [SRV_X, d.z - 4], [LANE_X, d.z - 16], [LANE_X, -46], [0, -46]].map(([x, z]) => this.toWorld(x, z)); }
 
     build() {
       this.pad();
@@ -58,11 +63,14 @@
       const g = this.group, S = this.structure, proc = this.recipe.proc, acc = ACCENT[this.lineName];
       W.flat(g, 26, 92, W.COL.apron, 53, 0, 0.026);
       W.flat(g, 6, 98, W.COL.road, LANE_X, 0, 0.029);
+      W.flat(g, 5, 80, W.COL.road, SRV_X, 4, 0.0295);
       W.flat(g, LANE_X + 3, 6, W.COL.road, (LANE_X + 3) / 2, 46, 0.029);
       W.flat(g, LANE_X + 3, 6, W.COL.road, (LANE_X + 3) / 2, -46, 0.029);
       const yel = [], arrows = [];
-      for (const d of DOCKS) { W.dashLine(yel, 50, d - 2, 65.5, d - 2, 15.5, 0, 0.18); W.dashLine(yel, 50, d + 2, 65.5, d + 2, 15.5, 0, 0.18); }
+      // a bay box per mover (its body runs 5.4 m ahead of and 7.8 m behind the stop point), arrows down both lanes
+      for (const d of DOCKS) W.dashRect(yel, SRV_X, d + 1.2, 3.8, 13.6, 1.1, 0.6, 0.2);
       for (let z = 40; z > -44; z -= 12) arrows.push({ x: LANE_X, z, len: 2.2, w: 0.5, rot: Math.PI / 2 });
+      for (const d of DOCKS) arrows.push({ x: SRV_X, z: d - 7.5, len: 1.8, w: 0.45, rot: Math.PI / 2 });
       W.dashes(g, yel, W.COL.yellow, 0.06);
       W.dashes(g, arrows, 0xffffff, 0.06);
       const hf = new T.Group();
@@ -120,6 +128,12 @@
         b.box(24, 0.4, 16, 0x9c7a5b, 22, 7, -24);
         for (const x of [11, 22, 33]) for (const z of [-31, -17]) b.box(0.6, 7, 0.6, 0x7a5b46, x, 0, z);
         b.box(16, 2.2, 3, 0x9aa1c4, 22, 0, -24);
+      } else if (proc === 'potline') {
+        // long low potroom with roof vents, alumina silos, fume-treatment stack
+        b.box(30, 7, 12, 0xd6dbef, 22, 0, -26); b.box(30.4, 0.6, 12.4, acc, 22, 7, -26);
+        for (let x = 10; x <= 34; x += 4) b.box(2.4, 1.6, 2.4, 0xb9bfd8, x, 7.6, -26);
+        M.silo(b, 8, -38, 2.6, 13, 0xe9ecf7); M.silo(b, 14, -38, 2.6, 13, 0xe9ecf7);
+        M.chimney(b, 36, -38, 1.5, 24, 0xb9bfd8); stack(36, 24.6, -38, 0x9aa1c4);
       } else if (proc === 'glassworks') {
         b.box(18, 9, 14, 0xb9bfd8, 16, 0, -24); b.box(18.4, 0.6, 14.4, acc, 16, 9, -24);
         b.box(3, 3, 30, 0xdfe3f2, 30, 0, -24);
@@ -128,7 +142,7 @@
       M.chimney(b, 94, -25, 1.6, 24); stack(94, 24.6, -25);
       if (!this.intermediate) { M.chimney(b, 94, 25, 1.6, 22); stack(94, 22.6, 25); }
       S.add(b.mesh());
-      if (['smelter', 'blast', 'refinery', 'glassworks'].includes(proc)) {
+      if (['smelter', 'blast', 'refinery', 'glassworks', 'potline'].includes(proc)) {
         const gl = proc === 'glassworks';
         this.furnace = new T.Mesh(new T.BoxGeometry(gl ? 0.1 : 5.6, 2, gl ? 4 : 0.1), new T.MeshBasicMaterial({ color: 0xff8a2a }));
         if (proc === 'blast') this.furnace.position.set(20, 2, -18.9);
@@ -159,13 +173,13 @@
       const midItem = outMat ? outMat.item || 'can' : { smelter: 'ingot', press: 'plank', tanks: 'can', sawmill: 'plank' }[proc];
       const midCol = outMat ? outMat.colors || [0xe9ecf7] : { smelter: [0xff9a3c, 0xffb347], press: [0xb8c2dc, 0xd6dbef], tanks: this.recipe.colors, sawmill: [0xdcb47e, 0xe2c79b] }[proc];
       this.midBelt = new FX.Conveyor(g, [[33.5, 3.4, -24], [37.5, 7.6, -24], [52, 7.6, -24], [67, 7.6, -24], [70, 7.6, -24]], { item: midItem, speed: 4, spacing: 1.7, glow: proc === 'smelter', colors: midCol, noPost: (x) => x > 36 && x < 68 });
-      // short roller beds from the trailer's rear doors straight through the dock door
+      // roller beds from beside the parked mover straight through the dock door
       this.docks.forEach((d) => {
         if (d.ops[0] === 'ship') {
-          d.obelt = new FX.Conveyor(g, [[70, 1.3, d.z], [67, 1.3, d.z], [65.4, 1.3, d.z]], { item: outMat.item || 'can', speed: 3, spacing: 1.4, colors: outMat.colors || [0xe9ecf7], onArrive: (it) => d.onOut && d.onOut(it) });
+          d.obelt = new FX.Conveyor(g, [[70, 1.3, d.z], [67, 1.3, d.z], [BELT_X, 1.3, d.z]], { item: outMat.item || 'can', speed: 3, spacing: 1.4, colors: outMat.colors || [0xe9ecf7], onArrive: (it) => d.onOut && d.onOut(it) });
           return;
         }
-        d.belt = new FX.Conveyor(g, [[65.4, 1.3, d.z], [67, 1.3, d.z], [70.5, 1.3, d.z]], { item: 'carton', speed: 3, spacing: 1.3 });
+        d.belt = new FX.Conveyor(g, [[BELT_X, 1.3, d.z], [67, 1.3, d.z], [70.5, 1.3, d.z]], { item: 'carton', speed: 3, spacing: 1.3 });
         d.cbelt = d.belt;
       });
       this.stacks.forEach((s) => this.emitters.push(FX.emitter(s.o, { rate: 1.6, color: s.c, size0: 3, size1: 14, life: 6, vy: 4.5, op: 0.55, jitter: 0.6 })));
@@ -184,7 +198,7 @@
     }
     *run() {
       let tIn = 0, tMid = 0, tOut = 0, tCycle = 0;
-      const need = this.intermediate ? 0.2 : 0.06;
+      const need = this.intermediate ? 0.4 : 0.12;
       while (true) {
         const dt = WT.sim.dt;
         tIn += dt; tMid += dt; tOut += dt; tCycle += dt;
@@ -228,10 +242,11 @@
       }
       return leaves;
     }
+    // a transfer hose from the dock wall across to the tank on the mover
     *hose(t, d, n) {
       t.status = 'Pumping';
-      const hose = new T.Mesh(new T.CylinderGeometry(0.18, 0.18, 3, 8), M.mat(0x22263d));
-      hose.position.set(WALL_X - 1.2, 1.6, d.z + 1.2);
+      const hose = new T.Mesh(new T.CylinderGeometry(0.18, 0.18, WALL_X - SRV_X - 1.5, 8), M.mat(0x22263d));
+      hose.position.set((WALL_X + SRV_X + 1.5) / 2, 2.4, d.z - 1);
       hose.rotation.z = Math.PI / 2;
       this.group.add(hose);
       while (t.loaded < n) { t.loaded++; yield* WT.sleep(0.6); }
@@ -248,6 +263,18 @@
       const c = t.mesh.userData.cargo;
       c.updateWorldMatrix(true, false);
       return c.localToWorld(new T.Vector3(-4.6, 0.6, 0));
+    }
+    // cartons from a closed box or ULD: carried out of the doors and across onto the dock belt one by one
+    *unloadClosed(t, belt, col) {
+      const to = this.beltPoint(belt, 0);
+      while (t.loaded < t.total) {
+        const last = belt.items[belt.items.length - 1];
+        if (last && last.s < belt.spacing + 0.5) { yield; continue; }
+        const c = col() || WT.pick(M.P.carton);
+        t.loaded++;
+        yield* FX.hop(this.rearPoint(t), to, c, 0.42, 'carton');
+        while (!belt.push(c)) yield;
+      }
     }
     // take items one by one off an open load (truck bed or open-frame container) and onto the dock belt
     *unloadOpen(t, belt, unit, col, item) {
@@ -300,7 +327,7 @@
       if (t.ulds && t.ulds.length) {
         t.status = 'Unloading ULD';
         for (const u of t.ulds) { S.note(u, `Broken down at ${this.id}`); u.status = 'Unloading'; u.loc = this.id; }
-        while (t.loaded < t.total) { if (d.belt.push(col())) { t.loaded++; yield* WT.sleep(0.45); } else yield; }
+        yield* this.unloadClosed(t, d.belt, col);
         for (const u of t.ulds) { S.empty(u); u.status = 'Empty'; S.note(u, 'Empty — returning to airport'); }
       } else if (t.container && t.container.open) {
         // open-top / flat-rack: the load is lifted straight out of the frame
@@ -312,6 +339,15 @@
         S.empty(c);
         c.status = 'Empty'; c.loc = t.id;
         S.note(c, `Emptied at ${this.id}`);
+      } else if (t.container && t.container.tank) {
+        // ISO tank: pumped off through the transfer hose
+        const c = t.container;
+        c.status = 'Discharging'; c.loc = this.id;
+        S.note(c, `Pumped off at ${this.id}`);
+        yield* this.hose(t, d, t.total);
+        S.empty(c);
+        c.status = 'Empty'; c.loc = t.id;
+        S.note(c, `Emptied at ${this.id}`);
       } else if (t.container) {
         const c = t.container;
         t.status = 'Destuffing';
@@ -319,7 +355,7 @@
         S.note(c, `Opened at ${this.id}`);
         const leaves = this.doors2(c);
         yield* WT.tween(1.2, (k) => leaves.forEach(([p, s]) => (p.rotation.y = s * k * 1.9)));
-        while (t.loaded < t.total) { if (d.cbelt.push(col())) { t.loaded++; yield* WT.sleep(0.42); } else yield; }
+        yield* this.unloadClosed(t, d.cbelt, col);
         yield* WT.tween(1.0, (k) => leaves.forEach(([p, s]) => (p.rotation.y = s * (1 - k) * 1.9)));
         leaves.forEach(([p]) => c.mesh.remove(p));
         S.empty(c);
@@ -332,7 +368,7 @@
         yield* this.unloadOpen(t, d.belt, t.bedLoad, col, M_ ? M_.item : t.bedLoad.mat && S.MAT[t.bedLoad.mat].item);
       } else {
         t.status = 'Unloading';
-        while (t.loaded < t.total) { if (d.belt.push(col())) { t.loaded++; yield* WT.sleep(0.45); } else yield; }
+        yield* this.unloadClosed(t, d.belt, col);
       }
       if (po) { S.delivered(po); t.po = null; }
       t.cargo = null;

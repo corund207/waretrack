@@ -8,7 +8,7 @@ import { open, advance } from './browser.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const site = process.env.SITE ? join(root, process.env.SITE) : existsSync(join(root, 'dist/index.html')) ? join(root, 'dist') : root;
-const BATCHES = +(process.env.SIM_BATCHES || 26); // × 20 sim-minutes
+const BATCHES = +(process.env.SIM_BATCHES || 60); // × 20 sim-minutes, including factory → mine → terminal → plant lead time
 
 let failed = 0;
 const check = (cond, msg) => { if (cond) console.log('✓ ' + msg); else { failed++; console.error('✗ ' + msg); } };
@@ -20,7 +20,24 @@ try {
   const version = await page.evaluate(() => WT.VERSION);
   check(badge.startsWith('v' + version), `version badge shows ${badge}`);
 
-  let maxOverlap = 0, maxJam = 0;
+  const containerModels = await page.evaluate(() => {
+    // every bulk heap gets a full-height open-top bin, everything else open a low flat-rack frame
+    const bulk = Object.keys(WT.SUP.MAT).filter(WT.SUP.isBulk);
+    const results = bulk.map((mat) => {
+      const c = WT.SUP.newContainer(11, mat), w = WT.M.wagonKind('container');
+      w.userData.slot.add(c.mesh);
+      const valid = c.open === mat && c.openTopBin && c.load && c.mesh.userData.bulkStyle === (mat === 'grain' ? 'covered-grain' : 'reinforced-open-top') && c.mesh.parent === w.userData.slot && w.userData.slot.position.x === 0 && w.userData.slot.position.y === 1.45;
+      WT.unregister(c);
+      return !!valid;
+    });
+    const c = WT.SUP.newContainer(11, 'glass');
+    const valid = c.open === 'glass' && !!c.load && !c.openTopBin;
+    WT.unregister(c);
+    return bulk.length >= 6 && results.every(Boolean) && valid;
+  });
+  check(containerModels, 'bulk heaps ride in open-top bins, other open loads in flat-racks, all mounted at the wagon center');
+
+  let maxOverlap = 0, maxJam = 0, starveS = 0, plantS = 0;
   const t0 = Date.now();
   await advance(page, BATCHES, async (i) => {
     const s = await page.evaluate(() => {
@@ -30,10 +47,39 @@ try {
         const a = V[i].actor, b = V[j].actor;
         if (Math.hypot(a.x - b.x, a.z - b.z) < 2.2) o++;
       }
-      return { t: WT.fmtTime(WT.sim.minutes), n: WT.facilities.filter((f) => f.active).length, trucks: WT.trucks.length, jam: WT.TR.jam, o };
+      const next = WT.G.next();
+      if (next && (!Number.isFinite(next.cost) || next.cost <= 0 || !next.icon || !next.label)) throw new Error('Invalid planned project: ' + next?.type);
+      for (const po of WT.SUP.orders.filter((o) => o.remoteSource)) {
+        const c = po.unit;
+        if (!c || !c.manufacturer || c.open !== po.mat || c.deliveredToSite !== po.remoteSource || !c.emptyDeliveryTrain) throw new Error('Remote order bypassed manufactured empty delivery: ' + po.id);
+        const journey = c.journey.map((j) => j.text);
+        const made = journey.findIndex((s) => s.startsWith('Manufactured at'));
+        const sent = journey.findIndex((s) => s.startsWith('Shipped empty on'));
+        const arrived = journey.findIndex((s) => s.startsWith('Empty delivered to'));
+        const loaded = journey.findIndex((s) => s.startsWith('Loaded at ' + po.remoteSource));
+        if (!(made >= 0 && made < sent && sent < arrived && arrived < loaded)) throw new Error('Remote container journey out of order: ' + po.id);
+      }
+      for (const tr of WT.trains) {
+        if (tr.origin && tr.manifest.length && tr.cars.length - 1 !== tr.manifest.length) throw new Error('Mine consist exceeds booked cargo: ' + tr.id);
+        if (!tr.terminal && tr.cars.slice(1).some((car) => car.kind === 'container' && !car.cont)) throw new Error('Unneeded empty through flat: ' + tr.id);
+        if (tr.terminal && !tr.origin && !tr.empties && tr.cars.length - 1 > Math.max(tr.manifest.length, 4)) throw new Error('Unneeded terminal wagons: ' + tr.id);
+        for (let i = 0; i < tr.cars.length; i++) {
+          const car = tr.cars[i];
+          if (car.cont && !car.cont.lifting && car.cont.mesh.parent !== car.g.userData.slot) throw new Error('Container detached from wagon mount: ' + tr.id);
+          if (i && Math.hypot(car.g.position.x - tr.cars[i - 1].g.position.x, car.g.position.z - tr.cars[i - 1].g.position.z) < 12) throw new Error('Train cars overlap: ' + tr.id);
+        }
+      }
+      // container handling at the rail and port terminals is for autonomous movers only
+      for (const t of WT.trucks) if (t.variant !== 'mover' && [t.curLeg, ...t.legs].some((l) => l && /Rail terminal|Port terminal/.test(l.fac.type))) (WT.__semiAtTerminal = WT.__semiAtTerminal || []).push(t.mission);
+      const works = WT.REMOTE.containerFactory();
+      if (works && works.slots.some((s) => s.items.length > 3 || s.items.some((c) => c.full || c.contents || c.open !== s.mat || c.manufacturer !== works.id))) throw new Error('Invalid manufactured empty inventory');
+      WT.UI.refresh();
+      if (/NaN|undefined/.test(document.querySelector('#docks').innerText)) throw new Error('Invalid project display');
+      const pl = WT.facilities.filter((f) => f.active && f.type === 'Factory');
+      return { t: WT.fmtTime(WT.sim.minutes), n: WT.facilities.filter((f) => f.active).length, trucks: WT.trucks.length, jam: WT.TR.jam, o, sv: pl.filter((f) => f.starved).length, pl: pl.length };
     });
     maxOverlap = Math.max(maxOverlap, s.o);
-    if (i > BATCHES / 2) maxJam = Math.max(maxJam, s.jam);
+    if (i > BATCHES / 2) { maxJam = Math.max(maxJam, s.jam); starveS += s.sv; plantS += s.pl; }
     if (i % 4 === 3 || i === BATCHES - 1) console.log(`  ${s.t}  ${s.n} facilities · ${s.trucks} vehicles · ${Math.round(s.jam * 100)}% queued · overlaps ${s.o}`);
     if (errors.length) throw new Error('page error during simulation');
   });
@@ -47,16 +93,90 @@ try {
       types: new Set(facs.map((f) => f.type)).size,
       plants: plants.length,
       fed: plants.filter((f) => f.recipe.in.some((m) => f.stock[m] > 0)).length,
-      delivered: WT.SUP.orders.filter((o) => o.status === 'Delivered').length,
+      delivered: WT.SUP.deliveryStats.total,
       trucks: WT.trucks.length,
+      remote: facs.filter((f) => f.remote).length,
+      mineLoads: facs.filter((f) => f.remote).reduce((n, f) => n + f.trainsLoaded, 0),
+      pipeDelivered: facs.find((f) => f.type === 'Gas field')?.sent || 0,
+      emptyReceived: facs.find((f) => f.type === 'Off-site empty yard')?.received || 0,
+      smelter: facs.some((f) => f.lineName === 'Aluminium Smelter'),
+      manufactured: WT.REMOTE.containerFactory()?.made || 0,
+      emptySent: WT.REMOTE.containerFactory()?.sent || 0,
+      remoteDelivered: WT.SUP.deliveryStats.remote,
+      siteEmptyReceived: facs.filter((f) => f.remote).reduce((n, f) => n + f.emptiesReceived, 0),
+      rail: WT.RAIL_STATS,
+      // resource intake: never by road truck — every order rides a trunk carrier, the last leg is a container mover
+      roadOrders: WT.SUP.orders.filter((o) => !['rail', 'sea', 'air', 'pipe', 'internal'].includes(o.mode)).length,
+      truckIntake: WT.trucks.filter((t) => t.po && t.variant !== 'mover').length,
+      movers: WT.trucks.filter((t) => t.variant === 'mover').length,
+      semiAtTerminal: WT.__semiAtTerminal || [],
+      fleet: WT.SUP.fleet(),
+      moverWait: WT.SUP.moverWait,
+      awaitingMover: WT.SUP.dispatchQ.length,
+      starved: plants.filter((f) => f.starved).length,
+      moverDepots: facs.filter((f) => f.type === 'Mover depot').length,
+      moversDelivered: facs.filter((f) => f.type === 'Mover depot').reduce((n, f) => n + f.delivered, 0),
+      moverDeliveries: WT.SUP.orders.filter((o) => o.status === 'Delivered' && o.events.some((e) => /^Mover assigned|^Collecting/.test(e.text))).length,
     };
   });
   check(st.n >= 20, `park grew to ${st.n} facilities of ${st.types} types`);
   check(st.plants >= 4 && st.fed >= st.plants - 1, `${st.fed}/${st.plants} factories have input stock`);
   check(st.delivered >= 20, `${st.delivered} purchase orders delivered end to end`);
+  check(st.remote === 5, `all five hinterland production sites constructed (${st.remote})`);
+  check(st.smelter, 'Aluminium Smelter constructed without blocking growth');
+  check(st.manufactured > 0 && st.emptySent > 0 && st.emptySent <= st.manufactured, `${st.manufactured} material-specific containers manufactured, ${st.emptySent} shipped empty by rail`);
+  check(st.siteEmptyReceived > 0 && st.siteEmptyReceived <= st.emptySent, `${st.siteEmptyReceived} manufactured empties received at remote loading sites`);
+  check(st.remoteDelivered > 0, `${st.remoteDelivered} orders delivered using the same manufactured containers`);
+  check(st.mineLoads > 0, `${st.mineLoads} trains loaded at remote production sites`);
+  check(st.pipeDelivered > 0, `${st.pipeDelivered} tonnes delivered by pipeline`);
+  check(st.emptyReceived > 0, `${st.emptyReceived} empty containers received off-site by rail`);
+  check(st.rail.maxWagons <= 10 && st.rail.freightCalls > 10, `cargo-sized, frequent freight services (${st.rail.freightCalls} calls, up to ${st.rail.maxWagons} wagons)`);
   check(st.trucks > 10, `${st.trucks} vehicles on the network`);
+  check(st.roadOrders === 0 && st.truckIntake === 0, 'no resources are trucked in by road (every order uses a trunk carrier)');
+  check(st.moverDeliveries > 20, `${st.moverDeliveries} of the latest orders delivered to plants by autonomous container movers (${st.movers} active)`);
+  check(st.semiAtTerminal.length === 0, 'only autonomous movers collect or drop containers at rail and port terminals' + (st.semiAtTerminal.length ? ': ' + [...new Set(st.semiAtTerminal)].slice(0, 3).join(' | ') : ''));
+  check(st.moverDepots >= 1 && st.fleet.size > 20 && st.moversDelivered > 0, `mover fleet grew to ${st.fleet.size} (${st.moversDelivered} delivered by lowloader, ${st.moverDepots} depot${st.moverDepots > 1 ? 's' : ''}, ${st.fleet.out} on jobs)`);
+  console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);
+  const mw = st.moverWait;
+  console.log(`  mover wait: ${mw.n} containers · avg ${(mw.sum / Math.max(1, mw.n)).toFixed(1)} min · max ${mw.max.toFixed(1)} min · ${st.awaitingMover} waiting now · ${st.starved}/${st.plants} plants starved`);
   check(maxOverlap <= 3, `vehicles never pile into each other (max ${maxOverlap} touching pairs)`);
   check(maxJam < 0.85, `traffic keeps moving (peak ${Math.round(maxJam * 100)}% queued)`);
+
+  const guards = await page.evaluate(() => {
+    const site = WT.REMOTE.siteFor('iron'), factory = WT.REMOTE.containerFactory();
+    const term = WT.facilities.find((f) => f.type === 'Rail terminal' && f.active);
+    const target = WT.facilities.find((f) => f.type === 'Factory' && f.active);
+    const stock = site.stock, received = site.emptiesReceived, loads = site.trainsLoaded;
+    const run = (g) => {
+      const dt = WT.sim.dt; WT.sim.dt = 0.1;
+      try { for (let i = 0; i < 100; i++) if (g.next().done) return; throw new Error('Guard test did not finish'); }
+      finally { WT.sim.dt = dt; }
+    };
+    const bad = [null, WT.SUP.newContainer(11, 'sand'), WT.SUP.newContainer(11, 'iron'), WT.SUP.newContainer(11, 'iron')];
+    bad[1].manufacturer = factory.id;
+    bad[3].manufacturer = factory.id; bad[3].full = true;
+    let blocked = true;
+    for (const c of bad) {
+      const po = { id: 'GUARD-TEST', mat: 'iron', qty: 20, to: target, events: [], unit: null };
+      run(site.loadTrain({ id: 'GUARD-TRAIN', cars: [{}, { cont: c }] }, [po]));
+      blocked &&= !po.unit && WT.SUP.backlog.rail.includes(po);
+      WT.SUP.backlog.rail.splice(WT.SUP.backlog.rail.indexOf(po), 1);
+      if (c) { WT.scene.remove(c.mesh); WT.unregister(c); }
+    }
+    blocked &&= site.stock === stock && site.emptiesReceived === received && site.trainsLoaded === loads;
+    const busy = factory.trainBusy;
+    factory.trainBusy = false;
+    const boxes = factory.slots.flatMap((s) => s.items);
+    const reserved = boxes.map((c) => c.reserved);
+    boxes.forEach((c) => { c.reserved = true; });
+    let shortage = false;
+    try { WT.REMOTE.mineTrain(site, term, [{ mat: 'iron' }]); } catch (e) { shortage = /requires manufactured empty/.test(e.message); }
+    boxes.forEach((c, i) => { c.reserved = reserved[i]; });
+    factory.trainBusy = busy;
+    return { blocked, shortage };
+  });
+  check(guards.blocked, 'missing, wrong-material, unmanufactured and full boxes cannot load; orders stay queued');
+  check(guards.shortage, 'empty-container shortages prevent mine train dispatch');
 
   // audit twice, 30 sim-seconds apart: anything in a lane both times is fixed scenery; things that moved
   // (a box swinging under a crane, a part being handed over) are transient and only reported for information
@@ -96,6 +216,7 @@ function auditPaths() {
   (WT.AIR.planes || []).forEach((p) => mark(p.mesh));
   WT.FX.belts.forEach((b) => skip.add(b.im));
   WT.TR.gates.forEach((g) => mark(g.arm));
+  WT.facilities.forEach((f) => (f.bays || []).forEach((b) => mark(b.mesh))); // movers parked on charge in their own bays
   for (const e of WT.entities.values()) if (['forklift', 'tug', 'pallet', 'uld'].includes(e.kind)) mark(e.mesh);
   WT.scene.traverse((o) => { if (o.isSprite || o.isLine || o.isLineSegments || o.userData.fx) skip.add(o); });
   const forests = new Set(WT.W.forests.map((f) => f.mesh));

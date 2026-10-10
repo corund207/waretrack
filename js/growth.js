@@ -14,15 +14,21 @@
   const COST = { Warehouse: 380e3, Factory: 390e3, 'Rail line': 900e3, 'Rail terminal': 750e3, 'Power plant': 600e3, 'Port terminal': 1.1e6,
     Airfield: 1.4e6, 'Air terminal': 1.0e6, Stand: 500e3, Tower: 300e3, Headquarters: 900e3, 'Solar farm': 300e3, 'Tank farm': 450e3, Parking: 200e3,
     'Container depot': 650e3, 'Truck stop': 350e3, Substation: 280e3, 'Water tower': 220e3,
-    'Steel Mill': 600e3, 'Copper Refinery': 520e3, 'Chemical Plant': 560e3, Sawmill: 340e3, 'Glass Works': 450e3 };
+    'Steel Mill': 600e3, 'Copper Refinery': 520e3, 'Chemical Plant': 560e3, Sawmill: 340e3, 'Glass Works': 450e3, 'Aluminium Smelter': 580e3,
+    'Iron mine': 380e3, 'Coal mine': 360e3, 'Bauxite mine': 380e3, 'Sand quarry': 300e3, 'Grain farm': 280e3,
+    'Container factory': 460e3, 'Gas field': 550e3, 'Off-site empty yard': 420e3, 'Mover depot': 520e3 };
   const DUR = { Warehouse: 26, Factory: 32, 'Rail line': 30, 'Rail terminal': 28, 'Power plant': 34, 'Port terminal': 34, Airfield: 26,
     'Air terminal': 30, Stand: 14, Tower: 18, Headquarters: 40, 'Solar farm': 16, 'Tank farm': 22, Parking: 12,
     'Container depot': 24, 'Truck stop': 18, Substation: 16, 'Water tower': 20,
-    'Steel Mill': 38, 'Copper Refinery': 32, 'Chemical Plant': 34, Sawmill: 24, 'Glass Works': 30 };
+    'Steel Mill': 38, 'Copper Refinery': 32, 'Chemical Plant': 34, Sawmill: 24, 'Glass Works': 30, 'Aluminium Smelter': 40,
+    'Iron mine': 24, 'Coal mine': 24, 'Bauxite mine': 24, 'Sand quarry': 20, 'Grain farm': 20,
+    'Container factory': 26, 'Gas field': 28, 'Off-site empty yard': 24, 'Mover depot': 22 };
   const ICON = { Warehouse: '🏬', Factory: '🏭', 'Rail line': '🛤️', 'Rail terminal': '🚉', 'Power plant': '⚡', 'Port terminal': '⚓', Airfield: '🛬',
     'Air terminal': '🛫', Stand: '🛩️', Tower: '📡', Headquarters: '🏢', 'Solar farm': '☀️', 'Tank farm': '🛢️', Parking: '🅿️',
     'Container depot': '🧱', 'Truck stop': '⛽', Substation: '🔌', 'Water tower': '💧',
-    'Steel Mill': '🔩', 'Copper Refinery': '🧵', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙' };
+    'Steel Mill': '🔩', 'Copper Refinery': '🧵', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙', 'Aluminium Smelter': '🪨',
+    'Iron mine': '⛏️', 'Coal mine': '⛏️', 'Bauxite mine': '⛏️', 'Sand quarry': '⛏️', 'Grain farm': '🌾',
+    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖' };
   G.ICON = ICON;
   const costOf = (type) => Math.round((COST[type] * Math.pow(1.065, G.done)) / 1000) * 1000;
 
@@ -45,6 +51,7 @@
     return null;
   }
   function project(type, make, extra = {}) {
+    if (!Number.isFinite(COST[type]) || !DUR[type] || !ICON[type]) throw new Error('Incomplete project catalogue: ' + type);
     return Object.assign({ type, make, cost: costOf(type), label: type, icon: ICON[type] }, extra);
   }
   const queue = [];
@@ -57,6 +64,8 @@
       () => project('Warehouse', () => new WT.Warehouse(plots(A0, -1, -1, 0), 'bulk')),
       () => project('Factory', () => new WT.Factory(plots(A0, -1, -1, 1), find('WH-02'), 'Auto Parts')),
       () => project('Rail line', null),
+      // the mover fleet must be in place before the first terminal: every container leaves it on a mover
+      () => project('Mover depot', () => new WT.MoverDepot(plots(A0, 1, 1, 1))),
       () => project('Rail terminal', () => new WT.RailTerminal(A0)),
       () => project('Steel Mill', () => new WT.Factory(plots(A0, 1, -1, 2), null, 'Steel Mill')),
       () => project('Container depot', () => new WT.Depot(plots(A0, -1, 1, 0))),
@@ -75,6 +84,16 @@
     ];
     if (G.scriptIdx === undefined) G.scriptIdx = 0;
     if (G.scriptIdx < script.length) { queue.push(script[G.scriptIdx++]()); return queue[0]; }
+    // Hinterland construction must precede procedural expansion: the rail scheduler serves sites,
+    // but does not construct them. Each is queued once, including while it is under construction.
+    if (W.railBuilt && has('Rail terminal', (f) => f.active)) {
+      if (!has('Container factory')) { queue.push(project('Container factory', () => new WT.ContainerFactory())); return queue[0]; }
+      for (const kind of Object.keys(WT.REMOTE.KINDS)) {
+        if (!has(kind)) { queue.push(project(kind, () => new WT.RemoteSite(kind))); return queue[0]; }
+      }
+      if (!has('Gas field')) { queue.push(project('Gas field', () => new WT.GasField())); return queue[0]; }
+      if (!has('Off-site empty yard')) { queue.push(project('Off-site empty yard', () => new WT.OffsiteYard())); return queue[0]; }
+    }
     // procedural growth
     const stands = count('Stand'), plotFacs = WT.facilities.filter((f) => f.plot).length;
     if (stands < WT.AIR.standXs.length && plotFacs >= 6 + stands * 4) { queue.push(project('Stand', () => new WT.Stand(stands + 1))); return queue[0]; }
@@ -83,6 +102,11 @@
     }
     for (const A of W.AVENUES) {
       if (usedOn(A) >= 4 && !has('Port terminal', (f) => f.A === A)) { queue.push(project('Port terminal', () => new WT.Port(A))); return queue[0]; }
+    }
+    // every mover bay is taken and jobs still wait for a mover: another depot for the growing fleet
+    if (WT.SUP.needMoverDepot && !has('Mover depot', (f) => !f.active)) {
+      const p = freePlot();
+      if (p) { p.used = 'planned'; WT.SUP.needMoverDepot = false; queue.push(project('Mover depot', () => new WT.MoverDepot(p), { plot: p })); return queue[0]; }
     }
     // upstream industry: build a primary plant once enough assembly lines depend on its output
     for (const name of WT.SUP.INTERMEDIATE) {

@@ -1,4 +1,4 @@
-/* WareTrack – logistics infrastructure: empty-container depot (RTG), truck stop, substation, water tower */
+/* WareTrack – logistics infrastructure: empty-container depot (RTG), truck stop, substation, water tower, mover depot */
 (function () {
   const T = THREE, M = WT.M, W = WT.W, CR = WT.CraneOps;
 
@@ -235,5 +235,148 @@
     card() { return this.cardBase({ kicker: 'Utility · Water', icon: '💧', sub: 'Park water supply', where: '2.4 ML', rows: [['Capacity', '2.4 ML'], ['Pressure', '5.2 bar']] }); }
   }
 
-  WT.Depot = Depot; WT.TruckStop = TruckStop; WT.Substation = Substation; WT.WaterTower = WaterTower;
+  /* ================= mover depot ================= */
+  // Home of the autonomous container mover fleet. Each mover owns a drive-through charging bay: it rolls out forward
+  // when a job comes in, does the job and comes back to the same bay. Bank N bays are entered off the north road and
+  // left via the middle road; bank S bays are entered off the middle road and left via the south road. New movers
+  // arrive on heavy-haul lowloaders that drive down the empty bay's lane and let the mover reverse straight off.
+  const MV_X = [26, 33, 40, 47, 54, 61, 68, 75, 82, 89], MV_N = 26, MV_S = -20, FEED_X = 14, EAST_X = 102;
+  const HAUL = 14.2; // the lowloader stops this far short of the bay, so the mover rolls off right onto its spot
+  let moverSeq = 100;
+  WT.nextMoverId = () => 'AGV-' + ++moverSeq;
+  class MoverDepot extends WT.Facility {
+    constructor(plot) {
+      super('Mover depot', 'MVD', 'Autonomous Mover Depot', plot);
+      this.income = 8000;
+      this.site = { x: 56, z: 0, w: 76, d: 70, h: 8 };
+      this.bays = [];
+      for (const [bank, z] of [['N', MV_N], ['S', MV_S]]) for (const x of MV_X) {
+        const b = { n: this.bays.length + 1, bank, x, z, depot: this, state: 'empty', unit: null, mesh: null, truck: null, ops: ['depart', 'park'] };
+        b.del = { n: b.n + 'H', bay: b, deliver: true, truck: null, ops: ['deliver'] };
+        this.bays.push(b);
+      }
+      this.docks = [...this.bays, ...this.bays.map((b) => b.del)]; // every bay is a fixed appointment: nothing is handed out
+      this.delivered = 0;
+    }
+    get gateIn() { return { A: this.plot.A, z: this.toWorld(0, 46)[1] }; }
+    get gateOut() { return { A: this.plot.A, z: this.toWorld(0, -46)[1] }; }
+    inPath(d) {
+      const b = d.bay || d, stop = d.deliver ? b.z - HAUL : b.z;
+      const pts = b.bank === 'N' ? [[0, 46], [b.x, 46], [b.x, stop]] : [[0, 46], [FEED_X, 46], [FEED_X, 0], [b.x, 0], [b.x, stop]];
+      return pts.map(([x, z]) => this.toWorld(x, z));
+    }
+    outPath(d) {
+      const b = d.bay || d, stop = d.deliver ? b.z - HAUL : b.z;
+      const pts = b.bank === 'N' ? [[b.x, stop], [b.x, 0], [EAST_X, 0], [EAST_X, -46], [0, -46]] : [[b.x, stop], [b.x, -46], [0, -46]];
+      return pts.map(([x, z]) => this.toWorld(x, z));
+    }
+    reserve() { return null; }
+    freeDocks() { return 0; }
+    release() {}
+    worldOf(b) { return this.toWorld(b.x, b.z); }
+    fleet() { return this.bays.filter((b) => b.state === 'home' || b.state === 'out').length; }
+    build() {
+      this.pad();
+      this.addGates();
+      const g = this.group, S = this.structure, road = W.COL.road;
+      W.flat(g, 95, 6, road, 47.5, 46, 0.028);           // north road
+      W.flat(g, 6, 49, road, FEED_X, 23, 0.028);         // feeder to the middle road
+      W.flat(g, 94, 6, road, 58, 0, 0.028);              // middle road
+      W.flat(g, 6, 52, road, EAST_X, -23, 0.028);        // east road
+      W.flat(g, 105, 6, road, 52.5, -46, 0.028);         // south road
+      for (const x of MV_X) for (const zc of [23, -23]) W.flat(g, 4.4, 46, 0x8e95b8, x, zc, 0.026); // bay lanes
+      const yel = [], arrows = [];
+      for (const b of this.bays) W.dashRect(yel, b.x, b.z + 1.2, 3.8, 14, 1.1, 0.6, 0.2);
+      W.dashes(g, yel, W.COL.yellow, 0.06);
+      for (const x of MV_X) arrows.push({ x, z: MV_N + 12, len: 1.8, w: 0.45, rot: Math.PI / 2 }, { x, z: MV_S - 12, len: 1.8, w: 0.45, rot: Math.PI / 2 });
+      for (const x of [30, 60, 90]) arrows.push({ x, z: 46, len: 2.2, w: 0.5, rot: 0 }, { x, z: 0, len: 2.2, w: 0.5, rot: 0 }, { x, z: -46, len: 2.2, w: 0.5, rot: Math.PI });
+      W.dashes(g, arrows, 0xffffff, 0.06);
+      const b = new M.MB();
+      // a charging mast between each pair of lanes: a pedestal at the bay, an arm reaching over the parked mover with
+      // a roof-contact pantograph (high enough to clear a mover with a box or tank on its deck)
+      for (const bay of this.bays) {
+        const x = bay.x + 3.5, z = bay.z + 1.2;
+        b.box(0.6, 1.8, 0.9, 0xe9ecf7, x, 0, z);                 // charger cabinet
+        b.box(0.62, 0.3, 0.92, 0x2aa198, x, 1.5, z);
+        b.box(0.1, 0.25, 0.25, 0x6bd16b, x - 0.32, 1.2, z);      // ready lamp
+        b.box(0.35, 5.6, 0.35, 0x9aa1c4, x, 0, z + 1.2);          // mast
+        b.box(3.9, 0.3, 0.4, 0x9aa1c4, x - 1.8, 5.4, z + 1.2);    // arm over the bay
+        b.box(1.6, 0.18, 1.2, 0x3a4166, bay.x, 5.15, z + 1.2);    // pantograph head
+        b.box(0.12, 0.6, 0.12, 0x3a4166, bay.x, 5.0, z + 1.2);
+      }
+      // fleet control centre, battery store and substation on the west strip
+      b.box(6, 3, 12, 0x3a4166, 5, 0, 22); b.box(6.2, 0.4, 12.2, 0x2aa198, 5, 3, 22);
+      for (const z of [-8, -4]) b.box(5, 2.4, 2.6, 0xc6cbe3, 5, 0, z);
+      for (const z of [-30, -20]) b.box(0.25, 9, 0.25, 0x9aa1c4, 21, 0, z);
+      S.add(b.mesh());
+      M.block(S, { x: 10, z: -27, w: 12, d: 14, h: 7, trim: 0x2aa198,
+        extra: (q) => { q.cyl(0.15, 0.15, 3, 0x9aa1c4, 13, 8.5, -24, 6); q.sphere(1.4, 0xf3f5fd, 13, 10.4, -24, 1, 0.4, 1, 10); } });
+    }
+    activate() {
+      super.activate();
+      // the first depot is commissioned with a full fleet, a mover on every charger; later ones open with a starter
+      // fleet and the supply planner fills their bays by lowloader as the work grows
+      const first = !WT.facilities.some((f) => f !== this && f.type === 'Mover depot' && f.active);
+      for (const b of this.bays.slice(0, first ? this.bays.length : 8)) this.park(b, { id: WT.nextMoverId(), jobs: 0 }, this.parkedMesh());
+    }
+    parkedMesh() { return M.mover({ deck: 'flat', color: WT.SUP.MOVERS.cab }); }
+    park(b, unit, mesh) {
+      this.group.add(mesh);
+      mesh.position.set(b.x, 0, b.z); mesh.rotation.set(0, Math.PI / 2, 0);
+      b.mesh = mesh; b.unit = unit; b.state = 'home';
+    }
+    // a lowloader is booked for an empty bay: the new mover rides on its deck
+    loadHauler(t, b) {
+      const m = this.parkedMesh();
+      t.mesh.userData.cargo.add(m);
+      m.position.set(-0.2, 0, 0);
+      t.newMover = m; t.newUnit = { id: WT.nextMoverId(), jobs: 0 };
+      t.circ = [-8.8, -6.0, -3.0, 0, 2.8, 5.4]; t.rear = 10; // the mover overhangs the deck at the back
+      b.state = 'incoming';
+      t.mission = `Fleet delivery: ${t.newUnit.id} → ${this.id} bay ${b.n}`;
+    }
+    *serve(t, leg) {
+      t.where = this.id;
+      if (leg.op === 'depart') {
+        leg.dock.mesh.visible = false;
+        t.status = 'Unplugging from charger';
+        yield* WT.sleep(0.5);
+      } else if (leg.op === 'park') {
+        t.status = 'Plugging in to charge';
+        yield* WT.sleep(0.4);
+        const b = leg.dock;
+        b.mesh.visible = true; t.mesh.visible = false;
+        b.state = 'home'; b.unit.jobs++;
+        this.moves++;
+        t.parked = true;
+      } else if (leg.op === 'deliver') {
+        const b = leg.dock.bay, m = t.newMover;
+        t.status = 'Lowering ramps';
+        yield* WT.sleep(1.2);
+        t.status = 'Unloading new mover';
+        this.group.attach(m);
+        const from = m.position.clone(), r0 = m.rotation.y;
+        // reverses down the deck and the ramps straight onto its charging spot
+        yield* WT.tween(4, (k) => {
+          const e = WT.ease(k);
+          m.position.set(WT.lerp(from.x, b.x, e), from.y * WT.clamp((1 - k) / 0.4, 0, 1), WT.lerp(from.z, b.z, e));
+          m.rotation.y = WT.lerp(r0, Math.PI / 2, e);
+        });
+        this.park(b, t.newUnit, m);
+        t.newMover = null;
+        this.delivered++;
+        WT.log(`🤖 ${b.unit.id} delivered to ${this.id} · fleet now ${WT.SUP.fleet().size} movers`, 'green');
+        yield* WT.sleep(0.6);
+      }
+    }
+    card() {
+      const n = (s) => this.bays.filter((b) => b.state === s).length;
+      return this.cardBase({ kicker: 'Facility · Mover depot', icon: '🤖', sub: 'Autonomous container mover fleet', where: this.fleet() + ' movers based here',
+        bars: [{ label: 'Bays in use', val: this.bays.length - n('empty'), max: this.bays.length }],
+        rows: [['Charging', String(n('home'))], ['On jobs', String(n('out'))], ['Arriving by lowloader', String(n('incoming'))], ['Free bays', String(n('empty'))],
+          ['Movers delivered', String(this.delivered)], ['Jobs completed', WT.fmtNum(this.moves)]] });
+    }
+  }
+
+  WT.Depot = Depot; WT.TruckStop = TruckStop; WT.Substation = Substation; WT.WaterTower = WaterTower; WT.MoverDepot = MoverDepot;
 })();

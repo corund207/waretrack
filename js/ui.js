@@ -32,6 +32,8 @@
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     crane: '<path d="M4 21V5h2v16"/><path d="M6 5h15l-3 3"/><path d="M17 5v6"/><rect x="15" y="11" width="4" height="3"/><path d="M2 21h8"/>',
     sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
+    moon: '<path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   };
   const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${P[n] || ''}</svg>`;
   UI.ic = ic;
@@ -56,7 +58,9 @@
       <button data-act="s1" class="spd" title="1× speed (1)">1×</button>
       <button data-act="s2" class="spd" title="2× speed (2)">2×</button>
       <button data-act="s4" class="spd" title="4× speed (3)">4×</button>
-      <button data-act="s8" class="spd" title="8× speed (4)">8×</button>`;
+      <button data-act="s8" class="spd" title="8× speed (4)">8×</button>
+      <span class="sep"></span>
+      <button data-act="theme" id="themeBtn"></button>`;
     $('#mapTools').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -68,7 +72,12 @@
       if (a === 'home') WT.home();
       if (a === 'pause') WT.setPaused(!WT.sim.paused);
       if (/^s\d$/.test(a)) WT.setSpeed(+a.slice(1));
+      if (a === 'theme') WT.Theme.toggle();
     });
+    // the button shows the mode it switches to
+    const themeState = (mode) => { const b = $('#themeBtn'); b.innerHTML = ic(mode === 'dark' ? 'sun' : 'moon'); b.title = mode === 'dark' ? 'Light mode (N)' : 'Dark mode (N)'; };
+    WT.on('theme', themeState);
+    themeState(WT.Theme ? WT.Theme.mode : 'light');
     WT.on('speed', speedState);
     speedState();
 
@@ -279,7 +288,7 @@
       }
     } else if (tab === 'orders') {
       const S = WT.SUP;
-      const MI = { sea: 'ship', rail: 'train', air: 'plane', road: 'truck', internal: 'factory' };
+      const MI = { sea: 'ship', rail: 'train', air: 'plane', road: 'truck', internal: 'factory', pipe: 'layers' };
       const list = openPO.concat(S.orders.filter((o) => o.status === 'Delivered').slice(0, 6));
       for (const o of list.slice(0, 24)) {
         const carrierEnt = o.vehicle && WT.entities.has(o.vehicle.uid) ? o.vehicle : o.unit && WT.entities.has(o.unit.uid) ? o.unit : null;
@@ -294,12 +303,20 @@
         const outBar = f.intermediate ? `<span class="sb out"><i style="height:${Math.round((f.outStock / f.outCap) * 100)}%"></i></span>` : '';
         rows += row(f.uid, f.id, f.lineName, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
       }
-      for (const t of act.filter((x) => x.type === 'Rail terminal' || x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, t.busy && t.busy !== 'incoming' ? 'Vessel/train in' : 'Open', 'blue', '');
+      for (const t of act.filter((x) => x.type === 'Rail terminal' || x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, (t.trainsIn ? t.trainsIn().length : t.busy && t.busy !== 'incoming') ? 'Vessel/train in' : 'Open', 'blue', '');
       for (const d of act.filter((x) => x.type === 'Container depot')) rows += row(d.uid, d.id, 'Depot', `${d.count()} empties stored`, 'Open', 'green', '');
+      for (const d of act.filter((x) => x.type === 'Mover depot')) {
+        const n = (st) => d.bays.filter((b) => b.state === st).length;
+        rows += row(d.uid, d.id, 'Movers', `${d.fleet()} based here · ${n('out')} on jobs · ${n('home')} charging${n('incoming') ? ` · ${n('incoming')} arriving` : ''}`, n('home') ? 'Ready' : 'All busy', n('home') ? 'green' : 'amber', '');
+      }
+      if (act.some((x) => x.type === 'Mover depot')) {
+        const q = WT.SUP.dispatchQ.length + WT.SUP.internalQ.length, mw = WT.SUP.moverWait;
+        rows += row('', 'Mover queue', 'Fleet', `${q} container${q === 1 ? '' : 's'} waiting for a mover · avg wait ${(mw.sum / Math.max(1, mw.n)).toFixed(1)} min`, q ? 'Queued' : 'Clear', q ? 'amber' : 'green', '');
+      }
       const at = act.find((x) => x.type === 'Air terminal');
       if (at) rows += row(at.uid, at.id, 'Air cargo', `${at.rack.filter((r) => r.u).length} ULDs on landside rack`, 'Open', 'blue', '');
       rows += row('', 'Booked', 'Freight', `${WT.SUP.backlog.sea.length} sea · ${WT.SUP.backlog.rail.length} rail · ${WT.SUP.backlog.air.length} air`, 'Awaiting carrier', 'amber', '');
-      const jam = WT.TR.jam, jq = S.dispatchQ.length + S.roadQ.length + S.internalQ.length;
+      const jam = WT.TR.jam, jq = S.dispatchQ.length + S.internalQ.length;
       rows += row('', 'Roads', 'Dispatch', `${Math.round(jam * 100)}% of traffic queued · ${jq} loads waiting`, S.holding ? 'Holding trucks' : jam > 0.3 ? 'Metering' : 'Free flow', S.holding || jam > 0.3 ? 'amber' : 'green', '');
     } else if (tab === 'facilities') {
       for (const f of act.slice().reverse()) rows += row(f.uid, f.id, f.type, esc(f.name), 'Online', 'green', money(f.income * 60 * WT.G.INCOME_SCALE) + '/m');
@@ -326,7 +343,7 @@
     const q = $('#searchInput').value.trim().toLowerCase();
     const box = $('#searchResults');
     const res = [];
-    const icon = { pallet: 'package', truck: 'truck', car: 'truck', forklift: 'truck', train: 'train', plane: 'plane', ship: 'ship', container: 'cube', tug: 'truck', facility: 'warehouse' };
+    const icon = { pallet: 'package', truck: 'truck', car: 'truck', forklift: 'truck', train: 'train', plane: 'plane', ship: 'ship', container: 'cube', tug: 'truck', facility: 'warehouse', 'cargo-shuttle': 'truck' };
     for (const e of WT.entities.values()) {
       if (!e.mesh || !e.mesh.parent) continue;
       if (!q && e.kind !== 'facility') continue;

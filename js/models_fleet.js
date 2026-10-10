@@ -132,7 +132,8 @@
 
   /* ---------- live loads: what an open trailer or open-frame container is carrying ---------- */
   // Instances are ordered bottom-up, so unloading takes from the top and loading stacks upward.
-  const LOAD_KIND = { steel: 'coils', timber: 'logs', lumber: 'planks', wire: 'reels', iron: 'heap', ore: 'heap', sand: 'heap', fabric: 'crates', comp: 'crates', glass: 'panes' };
+  const LOAD_KIND = { steel: 'coils', timber: 'logs', lumber: 'planks', wire: 'reels', iron: 'heap', ore: 'heap', sand: 'heap', fabric: 'crates', comp: 'crates', glass: 'panes',
+    coal: 'heap', bauxite: 'heap', grain: 'heap', alum: 'planks' };
   M.loadKind = (mat) => LOAD_KIND[mat] || 'crates';
   const LGEO = {
     coils: new T.CylinderGeometry(0.95, 0.95, 1.7, 16).rotateZ(Math.PI / 2),
@@ -153,8 +154,9 @@
     return geo;
   });
   class Load {
-    // L: usable deck length; the group's origin is the middle of the deck surface
-    constructor(mat, L) {
+    // L: usable deck length; the group's origin is the middle of the deck surface.
+    // heapH: how high a bulk heap may mound (the walls of an open-top bin hold more than a bare bed)
+    constructor(mat, L, heapH) {
       const m = WT.SUP.MAT[mat] || {};
       this.mat = mat;
       this.kind = M.loadKind(mat);
@@ -166,7 +168,7 @@
         this.mesh = new T.Mesh(heapGeometry(L), new T.MeshLambertMaterial({ color: this.colors[0], flatShading: true }));
         this.mesh.castShadow = this.mesh.receiveShadow = true;
         this.g.add(this.mesh);
-        this.h = 1.9;
+        this.h = heapH || 1.9;
         this.set(0);
         return;
       }
@@ -262,6 +264,69 @@
     return m;
   };
 
+  // ISO tank container: a stainless barrel in a 40' frame, for liquids (chemicals, syrup, resin, LPG) by rail or sea
+  M.isoTank = (color, len = 11) => {
+    const b = new MB();
+    const w = 2.6, h = 2.7, frame = shade(color, 0.75);
+    b.box(len, 0.22, w, frame, 0, 0, 0);
+    for (const x of [-len / 2 + 0.12, len / 2 - 0.12]) {
+      for (const z of [-w / 2 + 0.12, w / 2 - 0.12]) b.box(0.24, h, 0.24, frame, x, 0, z);
+      b.box(0.2, 0.2, w, frame, x, h - 0.2, 0);
+    }
+    for (const z of [-w / 2 + 0.1, w / 2 - 0.1]) b.box(len, 0.2, 0.16, frame, 0, h - 0.2, z);
+    b.cyl(1.2, 1.2, len - 1.6, 0xe1e6f2, 0, 1.35, 0, 18, 0, 0, Math.PI / 2);
+    for (const x of [-(len - 1.6) / 2, (len - 1.6) / 2]) b.sphere(1.2, 0xe1e6f2, x, 1.35, 0, 0.35, 1, 1, 14);
+    b.cyl(1.22, 1.22, 0.5, color, 0, 1.35, 0, 18, 0, 0, Math.PI / 2); // operator band
+    b.box(len - 2, 0.1, 0.7, 0x9aa1c4, 0, 2.55, 0); // top walkway
+    b.cyl(0.35, 0.35, 0.3, 0x9aa1c4, 0, 2.6, 0, 10); // manlid
+    const m = b.mesh();
+    m.userData.h = h;
+    return m;
+  };
+
+  // Autonomous container mover (AGV): a low, cab-less carrier that takes a box, ULD, tank or open load from a
+  // terminal crane to a plant's receiving bay. deck: flat (container) | stake (open load) | tanker | uld.
+  // Same footprint as a rig (front +7.2 / rear −7.8) so it shares the traffic engine; cargo sits at x −2.
+  M.mover = (o = {}) => {
+    const g = new T.Group(), b = new MB();
+    const deck = o.deck || 'flat', body = 0x25304a, acc = o.color || 0x2aa198;
+    b.box(13.2, 0.95, 2.9, body, -1.2, 0.4, 0);
+    b.box(13.24, 0.18, 2.94, acc, -1.2, 0.95, 0); // livery band
+    for (const x of [-7.6, 5.2]) b.box(0.3, 0.6, 2.7, 0xf0b429, x, 0.45, 0); // bumpers
+    // drive module up front: lidar mast, light bar, status lamps
+    b.box(1.4, 1.5, 2.6, body, 4.6, 1.35, 0);
+    b.box(1.42, 0.25, 2.62, acc, 4.6, 2.6, 0);
+    b.cyl(0.32, 0.32, 0.35, 0x8de9ff, 4.6, 3.05, 0, 12);
+    for (const z of [-1.0, 1.0]) b.box(0.1, 0.25, 0.5, 0xfff1b8, 5.35, 1.0, z);
+    for (const z of [-1.0, 1.0]) b.box(0.1, 0.25, 0.5, 0xe2384d, -7.82, 1.0, z);
+    for (const x of [-7.6, 5.2]) for (const z of [-1.5, 1.5]) b.cyl(0.18, 0.18, 0.2, 0x8de9ff, x, 1.35, z, 8); // corner sensors
+    // four steered axles
+    for (const x of [-6.4, -3.2, 0.6, 3.6]) for (const z of [-1.25, 1.25]) {
+      b.cyl(0.5, 0.5, 0.45, P.tire, x, 0.5, z, 12, Math.PI / 2);
+      b.cyl(0.24, 0.24, 0.48, P.hub, x, 0.5, z, 8, Math.PI / 2);
+    }
+    if (deck === 'flat') for (const x of [-7.5, 3.5]) for (const z of [-1.0, 1.0]) b.box(0.3, 0.2, 0.3, 0xf0b429, x, 1.35, z); // twistlocks
+    else if (deck === 'stake') {
+      b.box(11, 0.2, 2.7, 0x6a7194, -2.2, 1.35, 0);
+      for (const x of [-7.4, -4.6, -1.8, 1.0, 3.2]) for (const z of [-1.3, 1.3]) b.box(0.16, 1.5, 0.16, 0x3a4166, x, 1.5, z);
+    } else if (deck === 'tanker') {
+      b.box(11, 0.2, 2.4, 0x3a4166, -2.2, 1.35, 0);
+      b.cyl(1.3, 1.3, 9.6, 0xd5dae9, -2.2, 2.85, 0, 18, 0, 0, Math.PI / 2);
+      for (const x of [-7.0, 2.6]) b.sphere(1.3, 0xd5dae9, x, 2.85, 0, 0.3, 1, 1, 14);
+      b.cyl(1.32, 1.32, 0.3, acc, -2.2, 2.85, 0, 18, 0, 0, Math.PI / 2);
+    } else if (deck === 'uld') {
+      b.box(11, 0.2, 2.7, 0x6a7194, -2.2, 1.35, 0);
+      for (const z of [-0.9, -0.3, 0.3, 0.9]) b.box(10.8, 0.1, 0.12, 0xf0b429, -2.2, 1.55, z); // roller tracks
+    }
+    g.add(b.mesh());
+    const cargo = new T.Group();
+    cargo.position.set(-2, deck === 'flat' ? 1.35 : 1.65, 0); // container on the twistlocks, anything else on the deck plate
+    g.add(cargo);
+    g.userData.cargo = cargo;
+    g.userData.half = 1.45;
+    return g;
+  };
+
   M.CAR_KINDS = ['sedan', 'sedan', 'suv', 'van', 'pickup'];
   M.carKind = (color, kind = 'sedan') => {
     const b = new MB();
@@ -309,9 +374,11 @@
   };
 
   /* ================= rolling stock + ships ================= */
+  // container = intermodal flat (carries one removable 40' box); tank / hopper / box cars carry their load built in
   M.wagonKind = (kind) => {
-    if (kind === 'container') return M.wagon();
+    if (kind === 'container') { const w = M.wagon(); w.userData.kind = kind; return w; }
     const g = new T.Group();
+    g.userData.kind = kind;
     const b = new MB();
     b.box(12.4, 0.45, 2.9, 0x3a4166, 0, 1.0, 0);
     for (const bx of [-4.6, 4.6]) {

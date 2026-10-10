@@ -139,6 +139,11 @@
       if (d.uld) return [[903, -352], [903, -364], [d.x - 14, -364], [d.x - 6, -372], [d.x, -372]];
       return [[903, -352], [903, -363], [d.x - 12, -363]];
     }
+    // movers bound for the ULD docks (the only appointments booked here on arrival) wait on the ULD-only stretch of
+    // the service road, clear of the general-cargo turn and of the avenue
+    stagePath() { return [[903, -352], [903, -364], [942, -364]]; }
+    get stageSkip() { return 2; }
+    get stageRoom() { return 2; }
     // general cargo docks are back-in: pull past, reverse until the trailer doors meet the terminal wall
     dockPath(d) { return d.uld ? null : [[d.x - 12, -363], [d.x, -363], [d.x, -373.6]]; }
     outPath(d) {
@@ -224,9 +229,10 @@
       if (leg.op === 'uld-return') {
         t.status = 'Returning ULD';
         for (const u of t.ulds || []) {
-          let slot;
-          while (!(slot = this.rack.find((r) => !r.u))) yield* WT.sleep(0.5);
-          slot.u = u;
+          // a full rack holds import ULDs that can only leave through these docks: rather than wait on it (and lock
+          // the docks), the empty goes straight through the dock door to the airline pool
+          const slot = this.rack.find((r) => !r.u) || { x: leg.dock.x, z: -379, door: true };
+          if (!slot.door) slot.u = u;
           WT.scene.attach(u.mesh);
           yield* this.slideTo(u.mesh, new T.Vector3(slot.x, 0.95, slot.z));
           u.mesh.rotation.set(0, 0, 0);

@@ -11,8 +11,10 @@
   renderer.setClearColor(0xe8ebfa);
 
   const scene = (WT.scene = new T.Scene());
-  scene.add(new T.HemisphereLight(0xffffff, 0xb4bbe0, 0.74));
+  const hemi = new T.HemisphereLight(0xffffff, 0xb4bbe0, 0.74);
+  scene.add(hemi);
   const sun = new T.DirectionalLight(0xffffff, 0.5);
+  WT.lights = { hemi, sun }; // theme.js retunes these for dark mode
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   sun.shadow.bias = -0.0004;
