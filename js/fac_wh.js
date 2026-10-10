@@ -371,6 +371,9 @@
       if (leg.op === 'stuff' && t.container) { t.container.status = 'Stuffing'; t.container.loc = this.id; WT.SUP.note(t.container, `Stuffing at ${this.id}`); }
       t.where = `${this.id} · Door ${bay.n}`;
       if (t.shipment) { t.shipment.total = t.total; WT.advanceShipment(t.shipment, 2); }
+      // a product crate swings its rear doors open against the dock seals
+      const doors = leg.op === 'stuff' && t.container && t.container.mesh.userData.doors;
+      if (doors) yield* WT.tween(1.0, (k) => doors.forEach(([p, s]) => (p.rotation.y = s * k * 1.75)));
       bay.docked = true;
       bay.jobs = Array.from({ length: t.total }, () => ({}));
       while (t.loaded < t.total) {
@@ -384,6 +387,7 @@
       yield* WT.sleep(1.2);
       bay.docked = false;
       bay.jobs = [];
+      if (doors) yield* WT.tween(0.9, (k) => doors.forEach(([p, s]) => (p.rotation.y = s * (1 - k) * 1.75)));
       if (leg.op === 'stuff' && t.container) {
         WT.SUP.fillProduct(t.container, (this.product || WT.pick(Object.keys(WT.SUP.RECIPES))) + ' (palletised)', t.total);
         t.container.status = 'Export · sealed';

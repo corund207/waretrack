@@ -1,15 +1,17 @@
 /* WareTrack – production plants
    Intermediate plants (steel mill, copper refinery, chemical plant, sawmill, glass works) turn raw imports into
    intermediates and ship them to assembly plants by in-park container movers.
-   Receiving is a through road: movers enter at the north gate, run down the bypass lane, pull alongside a bay in the
-   service lane beside the dock wall, are unloaded sideways onto the dock belt and drive on out of the south gate.
+   Receiving is a one-way yard: movers enter at the north gate, run down the bypass lane, pull past their bay and
+   reverse square onto its dock door. They are unloaded out of the back (doors opened, tank hosed up, open loads lifted
+   out) onto a roller bed through the door, then pull out and carry on down the lane to the south gate.
    Assembly plants consume inputs and push finished cartons over a belt bridge into their paired warehouse.
    Inputs only rise when a purchase order is physically delivered. */
 (function () {
   const T = THREE, M = WT.M, W = WT.W, FX = WT.FX;
-  // bay positions along the service lane, 16 m apart so a parked mover (13 m) never blocks the next bay
+  // dock doors along the wall, 16 m apart: a mover backed onto one (3 m wide) leaves room to reverse into the next
   const DOCKS = [36, 20, 4, -12];
-  const WALL_X = 66, LANE_X = 43, SRV_X = 56, BELT_X = 59;
+  // a docked mover's rear bumper stops at REAR_X, 2 m short of the wall; its origin sits 7.8 m ahead of the bumper
+  const WALL_X = 66, LANE_X = 43, REAR_X = 64, DOCK_X = REAR_X - 7.8, BELT_X = 64.6, PULL = 13;
   const PREFIX = { 'Steel Mill': 'STL', 'Copper Refinery': 'CU', 'Chemical Plant': 'CHM', Sawmill: 'SAW', 'Glass Works': 'GLS', 'Aluminium Smelter': 'ALU' };
   const ACCENT = { Electronics: 0x2f56e0, Appliances: 0x1aa6b7, 'Auto Parts': 0x6a7194, Beverages: 0x3a6ff7, Furniture: 0xb5543d, Pharma: 0x37b26c,
     'Steel Mill': 0x4a5578, 'Copper Refinery': 0xc87533, 'Chemical Plant': 0x37b26c, Sawmill: 0x9c7a5b, 'Glass Works': 0x1aa6b7, 'Aluminium Smelter': 0x9aa1c4 };
@@ -52,10 +54,12 @@
     stagePath() { return [[0, 46], [26, 46]].map(([x, z]) => this.toWorld(x, z)); }
     get stageSkip() { return 1; }
     get stageRoom() { return 2; } // deliveries booked beyond the free bays: they queue on the entry road
-    // through road: down the bypass lane, ease across into the service lane and stop alongside the bay ...
-    inPath(d) { return [[0, 46], [LANE_X, 46], [LANE_X, Math.min(46, d.z + 16)], [SRV_X, d.z + 4], [SRV_X, d.z]].map(([x, z]) => this.toWorld(x, z)); }
-    // ... then carry straight on, back across to the bypass and out of the far gate — nobody ever reverses
-    outPath(d) { return [[SRV_X, d.z], [SRV_X, d.z - 4], [LANE_X, d.z - 16], [LANE_X, -46], [0, -46]].map(([x, z]) => this.toWorld(x, z)); }
+    // down the bypass lane and past the bay ...
+    inPath(d) { return [[0, 46], [LANE_X, 46], [LANE_X, d.z - PULL]].map(([x, z]) => this.toWorld(x, z)); }
+    // ... reverse square onto the dock door ...
+    dockPath(d) { return [[LANE_X, d.z - PULL], [LANE_X, d.z], [DOCK_X, d.z]].map(([x, z]) => this.toWorld(x, z)); }
+    // ... then pull out onto the lane and on to the south gate
+    outPath(d) { return [[DOCK_X, d.z], [LANE_X, d.z], [LANE_X, -46], [0, -46]].map(([x, z]) => this.toWorld(x, z)); }
 
     build() {
       this.pad();
@@ -63,14 +67,19 @@
       const g = this.group, S = this.structure, proc = this.recipe.proc, acc = ACCENT[this.lineName];
       W.flat(g, 26, 92, W.COL.apron, 53, 0, 0.026);
       W.flat(g, 6, 98, W.COL.road, LANE_X, 0, 0.029);
-      W.flat(g, 5, 80, W.COL.road, SRV_X, 4, 0.0295);
       W.flat(g, LANE_X + 3, 6, W.COL.road, (LANE_X + 3) / 2, 46, 0.029);
       W.flat(g, LANE_X + 3, 6, W.COL.road, (LANE_X + 3) / 2, -46, 0.029);
       const yel = [], arrows = [];
-      // a bay box per mover (its body runs 5.4 m ahead of and 7.8 m behind the stop point), arrows down both lanes
-      for (const d of DOCKS) W.dashRect(yel, SRV_X, d + 1.2, 3.8, 13.6, 1.1, 0.6, 0.2);
+      // a bay box square to each dock door (a docked mover runs 13.2 m out from its bumper), with a stop line at the
+      // bumper, guide lines out to the lane and arrows down the one-way lane
+      const guide = [];
+      for (const d of DOCKS) {
+        W.dashRect(yel, REAR_X - 6.6, d, 13.6, 3.8, 1.1, 0.6, 0.2);
+        guide.push({ x: REAR_X + 0.2, z: d, len: 0.35, w: 3.4 });
+        for (const s of [-1, 1]) W.dashLine(guide, REAR_X - 13.4, d + s * 2.4, LANE_X + 4, d + s * 2.4, 1.2, 0.9, 0.16);
+      }
       for (let z = 40; z > -44; z -= 12) arrows.push({ x: LANE_X, z, len: 2.2, w: 0.5, rot: Math.PI / 2 });
-      for (const d of DOCKS) arrows.push({ x: SRV_X, z: d - 7.5, len: 1.8, w: 0.45, rot: Math.PI / 2 });
+      W.dashes(g, guide, 0xffffff, 0.06);
       W.dashes(g, yel, W.COL.yellow, 0.06);
       W.dashes(g, arrows, 0xffffff, 0.06);
       const hf = new T.Group();
@@ -242,14 +251,19 @@
       }
       return leaves;
     }
-    // a transfer hose from the dock wall across to the tank on the mover
+    // a transfer hose from the coupling on the dock wall down to the outlet on the back of the tank
     *hose(t, d, n) {
-      t.status = 'Pumping';
-      const hose = new T.Mesh(new T.CylinderGeometry(0.18, 0.18, WALL_X - SRV_X - 1.5, 8), M.mat(0x22263d));
-      hose.position.set((WALL_X + SRV_X + 1.5) / 2, 2.4, d.z - 1);
-      hose.rotation.z = Math.PI / 2;
+      t.status = 'Coupling hose';
+      const len = Math.hypot(WALL_X - REAR_X + 0.3, 1.4);
+      const hose = new T.Mesh(new T.CylinderGeometry(0.16, 0.16, len, 8), M.mat(0x22263d));
+      hose.position.set((WALL_X + REAR_X - 0.3) / 2, 2.6, d.z + 0.6);
+      hose.rotation.z = Math.PI / 2 + Math.atan2(1.4, WALL_X - REAR_X + 0.3);
+      hose.scale.y = 0.01;
       this.group.add(hose);
+      yield* WT.tween(0.8, (k) => (hose.scale.y = Math.max(0.01, k)));
+      t.status = 'Pumping';
       while (t.loaded < n) { t.loaded++; yield* WT.sleep(0.6); }
+      yield* WT.tween(0.6, (k) => (hose.scale.y = Math.max(0.01, 1 - k)));
       this.group.remove(hose);
     }
     // world position of a point on a belt

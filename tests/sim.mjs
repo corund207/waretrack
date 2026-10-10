@@ -116,6 +116,7 @@ try {
       awaitingMover: WT.SUP.dispatchQ.length,
       starved: plants.filter((f) => f.starved).length,
       moverDepots: facs.filter((f) => f.type === 'Mover depot').length,
+      cratesIssued: WT.SUP.cratesIssued, cratesRailed: WT.SUP.cratesRailed,
       moversDelivered: facs.filter((f) => f.type === 'Mover depot').reduce((n, f) => n + f.delivered, 0),
       moverDeliveries: WT.SUP.orders.filter((o) => o.status === 'Delivered' && o.events.some((e) => /^Mover assigned|^Collecting/.test(e.text))).length,
     };
@@ -136,6 +137,7 @@ try {
   check(st.roadOrders === 0 && st.truckIntake === 0, 'no resources are trucked in by road (every order uses a trunk carrier)');
   check(st.moverDeliveries > 20, `${st.moverDeliveries} of the latest orders delivered to plants by autonomous container movers (${st.movers} active)`);
   check(st.semiAtTerminal.length === 0, 'only autonomous movers collect or drop containers at rail and port terminals' + (st.semiAtTerminal.length ? ': ' + [...new Set(st.semiAtTerminal)].slice(0, 3).join(' | ') : ''));
+  check(st.cratesRailed > 0, `${st.cratesRailed} product crates left by rail (${st.cratesIssued} issued to distribution centres)`);
   check(st.moverDepots >= 1 && st.fleet.size > 20 && st.moversDelivered > 0, `mover fleet grew to ${st.fleet.size} (${st.moversDelivered} delivered by lowloader, ${st.moverDepots} depot${st.moverDepots > 1 ? 's' : ''}, ${st.fleet.out} on jobs)`);
   console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);
   console.log('  rail yards: ' + st.yards.join(' '));

@@ -149,7 +149,7 @@
     const paver = M.paver();
     WT.scene.add(paver);
     paver.rotation.y = h < 0 ? Math.PI / 2 : -Math.PI / 2;
-    W.clearTrees({ x0: A - 9, x1: A + 9, z0: Math.min(h * from, h * to) - 2, z1: Math.max(h * from, h * to) + 2 });
+    W.clearTrees({ x0: A - 12, x1: A + 12, z0: Math.min(h * from, h * to) - 2, z1: Math.max(h * from, h * to) + 2 }); // a verge either side for rigs swinging into gates
     yield* WT.tween(len / speed, (t) => {
       g.scale.z = Math.max(0.001, t);
       paver.position.set(A + 2.5, 0, h * (from + len * t));
@@ -361,7 +361,8 @@
 
   /* ---------- base world ---------- */
   W.build = function (scene) {
-    W.flat(scene, 40000, 40000, COL.ground, 0, 0, 0);
+    // the open ground sits a hair behind everything laid on it, so thin pads and roads never fight it at low angles
+    W.flat(scene, 40000, 40000, COL.ground, 0, 0, 0).material = M.mat(COL.ground, { surface: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 });
     W.flat(scene, (W.EDGE + 400) * 2, 16, COL.road, 0, 0, 0.03);
     const d = [];
     for (const z of [-0.25, 0.25]) W.dashLine(d, -W.EDGE - 400, z, W.EDGE + 400, z, 4200, 0, 0.16);

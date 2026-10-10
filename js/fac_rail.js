@@ -335,6 +335,7 @@
           const r = this.unstackLift(c, containerFilter, p.x, p.z, 1.45, (cont, m) => {
             car.g.userData.slot.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
             car.cont = cont; cont.status = 'On rail'; cont.loc = tr.id;
+            if (cont.crate) WT.SUP.cratesRailed++;
             loaded++; sh.loaded = loaded;
             WT.SUP.note(cont, `Loaded on ${tr.id} → ${sh.to}`);
             WT.updateShipment(sh, Math.round(WT.secToMin((3 - loaded) * 12)));

@@ -5,7 +5,8 @@
 (function () {
   const T = THREE, M = WT.M;
   // fwd: the model's forward axis · len: length along it in the park · front: x of the nose (default: centred)
-  // dropFront: cut low geometry this fraction of len behind the nose (fixed forks) · refront: x of the nose after
+  // carriage: the front share of len (the forklift's carriage and forks) split off as its own mesh, named 'carriage',
+  // so the park can raise and lower it
   // tint: material names that take the vehicle's livery colour · gear: node names that retract in flight
   const SPEC = {
     cab: { fwd: '+z', len: 7.2, front: 7.4, tint: ['base'], crease: true },
@@ -14,7 +15,7 @@
     van: { fwd: '+x', len: 6.1, front: 3.1 },
     plane: { fwd: '+z', len: 52, front: 19, gear: ['FRONT_LG', 'REAR_LEFT_LG', 'REAR_RIGHT_LG'] },
     loco: { fwd: '+z', len: 13.4 },
-    forklift: { file: 'fork', fwd: '+z', len: 3.9, front: 1.75, dropFront: 0.3, refront: 1.66 },
+    forklift: { file: 'fork', fwd: '+z', len: 4.9, front: 3.39, carriage: 0.335 },
   };
   const ROT = { '+x': 0, '-x': Math.PI, '+z': Math.PI / 2, '-z': -Math.PI / 2 };
   const A = (WT.ASSETS = { models: {}, failed: [] });
@@ -43,42 +44,50 @@
       if (!o.isMesh) return;
       o.castShadow = o.receiveShadow = true;
       if (s.crease || !o.geometry.attributes.normal) o.geometry = T.BufferGeometryUtils.toCreasedNormals(o.geometry, Math.PI / 5);
-      if (s.dropFront !== undefined) dropAhead(o, front - s.dropFront * s.len);
       for (const m of [].concat(o.material)) {
         m.userData.auto = false; // the model's own roughness / metalness stand
         if (m.map) m.map.anisotropy = 4;
         if (m.transparent && m.opacity > 0.95) m.transparent = false;
       }
     });
-    if (s.refront !== undefined) {
-      // fit the trimmed model's new nose (the mast) to where the park hangs its own lift
-      bb = new T.Box3().setFromObject(g);
-      inner.position.x += s.refront - bb.max.x;
-      g.updateMatrixWorld(true);
-    }
+    if (s.carriage) splitCarriage(g, scene, front - s.carriage * s.len);
     return g;
   }
-  // the downloaded forklift has fixed forks; the park animates its own, so cut away everything ahead of the mast
-  function dropAhead(mesh, x0) {
-    const geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
-    const pos = geo.attributes.position, v = new T.Vector3(), keep = [];
-    const toPark = mesh.matrixWorld;
-    for (let i = 0; i < pos.count; i += 3) {
-      let ahead = 0, low = 0;
-      for (let k = 0; k < 3; k++) {
-        v.fromBufferAttribute(pos, i + k).applyMatrix4(toPark);
-        if (v.x > x0) ahead++;
-        if (v.y < 1.3) low++;
+  // move every triangle ahead of x0 (park space) out of the model into one mesh of its own, baked into park space
+  function splitCarriage(g, scene, x0) {
+    const v = new T.Vector3(), parts = [];
+    scene.traverse((o) => { if (o.isMesh) parts.push(o); });
+    const geos = [];
+    let mat = null;
+    for (const mesh of parts) {
+      const geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+      const pos = geo.attributes.position, front = [], back = [];
+      for (let i = 0; i < pos.count; i += 3) {
+        let cx = 0;
+        for (let k = 0; k < 3; k++) cx += v.fromBufferAttribute(pos, i + k).applyMatrix4(mesh.matrixWorld).x;
+        (cx / 3 > x0 ? front : back).push(i);
       }
-      if (!(ahead === 3 && low === 3)) keep.push(i);
+      if (!front.length) continue;
+      const pick = (list) => {
+        const out = new T.BufferGeometry();
+        for (const [key, attr] of Object.entries(geo.attributes)) {
+          const n = attr.itemSize, src = attr.array, dst = new src.constructor(list.length * 3 * n);
+          list.forEach((i, j) => dst.set(src.subarray(i * n, (i + 3) * n), j * 3 * n));
+          out.setAttribute(key, new T.BufferAttribute(dst, n, attr.normalized));
+        }
+        return out;
+      };
+      const f = pick(front);
+      f.applyMatrix4(mesh.matrixWorld);
+      geos.push(f);
+      mat = mesh.material;
+      mesh.geometry = pick(back);
     }
-    const out = new T.BufferGeometry();
-    for (const [key, attr] of Object.entries(geo.attributes)) {
-      const n = attr.itemSize, src = attr.array, dst = new src.constructor(keep.length * 3 * n);
-      keep.forEach((i, j) => dst.set(src.subarray(i * n, (i + 3) * n), j * 3 * n));
-      out.setAttribute(key, new T.BufferAttribute(dst, n, attr.normalized));
-    }
-    mesh.geometry = out;
+    if (!geos.length) return;
+    const carriage = new T.Mesh(geos.length > 1 ? T.BufferGeometryUtils.mergeBufferGeometries(geos) : geos[0], mat);
+    carriage.name = 'carriage';
+    carriage.castShadow = carriage.receiveShadow = true;
+    g.add(carriage);
   }
 
   A.ready = new Promise((resolve) => {

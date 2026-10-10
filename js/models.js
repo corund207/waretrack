@@ -302,13 +302,19 @@
     if (!model) g.add(b.mesh());
     const lift = new T.Group();
     lift.position.set(1.75, 0.1, 0);
+    g.add(lift);
+    g.userData.lift = lift;
+    if (model) {
+      // the model's own carriage and forks ride the lift (it was split off the mast in park space)
+      const c = model.getObjectByName('carriage');
+      if (c) { lift.add(c); c.position.set(-1.75, -0.1, 0); }
+      return g;
+    }
     const fb = new MB();
     fb.box(0.12, 1.1, 1.4, P.dark, 0, 0, 0);
     fb.box(2.0, 0.1, 0.22, 0x50577a, 1.0, 0, -0.5);
     fb.box(2.0, 0.1, 0.22, 0x50577a, 1.0, 0, 0.5);
     lift.add(fb.mesh());
-    g.add(lift);
-    g.userData.lift = lift;
     return g;
   };
 
@@ -380,6 +386,48 @@
   };
 
   /* ---------- rail ---------- */
+  // WareTrack product crate: a pallet-wide 40' box that distribution centres fill with finished goods for the
+  // railway. White ribbed walls on a blue base band, the company mark, full-width rear doors that swing open
+  // (userData.doors: [pivot, side] pairs) and a navy frame.
+  M.productCrate = (len = 11) => {
+    const b = new MB(), w = 2.6, h = 2.7, frame = 0x1f2a4d, wall = 0xeef1f6, band = P.blue;
+    b.box(len, h - 0.2, w, wall, 0, 0.1, 0);
+    const n = Math.round(len / 0.55);
+    for (let i = 1; i < n; i++) {
+      const x = -len / 2 + i * (len / n);
+      for (const s of [1, -1]) b.box(0.1, h - 0.9, 0.05, 0xd9dee8, x, 0.75, s * (w / 2 + 0.02));
+    }
+    for (const s of [1, -1]) b.box(len + 0.02, 0.6, 0.06, band, 0, 0.15, s * (w / 2 + 0.03));
+    // frame: bottom and top rails, corner posts, front end wall
+    for (const y of [0, h - 0.2]) for (const s of [1, -1]) b.box(len + 0.04, 0.2, 0.16, frame, 0, y, s * (w / 2 - 0.05));
+    for (const x of [-len / 2 + 0.08, len / 2 - 0.08]) for (const s of [1, -1]) b.box(0.18, h, 0.18, frame, x, 0, s * (w / 2 - 0.07));
+    b.box(0.08, h - 0.4, w - 0.3, M.shade(wall, 0.9), len / 2 - 0.02, 0.2, 0);
+    b.box(len - 0.1, 0.06, w - 0.1, 0xdfe3ea, 0, h - 0.06, 0);
+    const m = b.mesh();
+    m.userData.h = h;
+    // the mark on both sides
+    const tex = M.labelTex('WareTrack Rail', band);
+    for (const s of [1, -1]) {
+      const d = M.decal(tex, 6.4, 1.6);
+      d.position.set(0.4, 1.6, s * (w / 2 + 0.06));
+      if (s < 0) d.rotation.y = Math.PI;
+      m.add(d);
+    }
+    // rear doors: two leaves hinged on the corner posts, with locking bars
+    m.userData.doors = [];
+    for (const s of [1, -1]) {
+      const piv = new T.Group();
+      piv.position.set(-len / 2 - 0.05, 0, (s * w) / 2);
+      const lb = new MB();
+      lb.box(0.08, h - 0.3, w / 2 - 0.04, wall, 0, 0.15, (-s * w) / 4);
+      for (const k of [0.3, 0.75]) lb.box(0.1, h - 0.5, 0.06, 0x9aa1c4, -0.04, 0.25, (-s * w * k) / 2);
+      lb.box(0.1, 0.5, w / 2 - 0.04, band, -0.01, 0.15, (-s * w) / 4);
+      piv.add(lb.mesh());
+      m.add(piv);
+      m.userData.doors.push([piv, s]);
+    }
+    return m;
+  };
   M.wagon = () => {
     const g = new T.Group();
     const b = new MB();

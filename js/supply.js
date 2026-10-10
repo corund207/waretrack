@@ -75,6 +75,16 @@
     c.line = line.name;
     return c;
   };
+  // an empty WareTrack product crate from the park's own pool: distribution centres send finished goods out by rail in these
+  S.newCrate = () => {
+    const c = new WT.Container(WT.M.P.blue, 11, WT.M.productCrate(11));
+    c.crate = true;
+    c.size = "40' product crate";
+    c.line = 'WareTrack Rail';
+    return c;
+  };
+  S.cratesRailed = 0;
+  S.cratesIssued = 0;
   S.fillPO = (u, po) => { u.contents = { kind: 'mat', mat: po.mat, qty: po.qty, name: S.MAT[po.mat].name, po }; u.full = true; u.po = po; po.unit = u; if (u.load) u.load.set(1); };
   S.fillProduct = (c, name, qty) => { c.contents = { kind: 'product', name, qty }; c.full = true; c.po = null; };
   S.empty = (c) => { c.contents = null; c.full = false; c.po = null; if (c.load) c.load.set(0); };
@@ -211,7 +221,10 @@
     const [tx, tz] = legs[0].fac.center();
     const home = bays().filter((b) => b.state === 'home');
     if (!home.length) { S.moverShortT = WT.sim.minutes; return null; }
-    if (o.background && (S.dispatchQ.length + S.internalQ.length > 0 || home.length <= reserveN(S.fleet().size))) return null;
+    // product crates only borrow movers beyond the reserve: waiting containers are mostly held up by full plant bays,
+    // not by a lack of movers, so the reserve alone keeps factory supply first
+    if (o.crateJob && (home.length <= reserveN(S.fleet().size) + 1 || WT.trucks.filter((t) => t.container && t.container.crate).length >= 3)) return null;
+    if (o.background && !o.crateJob && (S.dispatchQ.length + S.internalQ.length > 0 || home.length <= reserveN(S.fleet().size))) return null;
     const d2 = (b) => { const [x, z] = b.depot.worldOf(b); return (x - tx) ** 2 + (z - tz) ** 2; };
     const bay = home.reduce((a, b) => (d2(b) < d2(a) ? b : a));
     bay.state = 'out';
@@ -354,6 +367,25 @@
     }
   }
 
+  /* ---------- product crates: finished goods from a distribution centre out by rail ---------- */
+  // A mover takes an empty WareTrack crate from the pool, backs it onto a DC dock door, the dock forklifts fill it
+  // with pallets, and it is dropped in a rail yard for the next freight call. Runs on its own clock (not the
+  // background-plan lottery) but only on spare movers, and never more than three crates on the road at once.
+  function crateRun() {
+    const yards = active('Rail terminal').filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 2 && f.exportCount() < 10);
+    const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80), 'stuff');
+    if (!yards.length || !wh) return false;
+    const [wx, wz] = wh.center();
+    const term = yards.reduce((a, b) => (Math.hypot(b.center()[0] - wx, b.center()[1] - wz) < Math.hypot(a.center()[0] - wx, a.center()[1] - wz) ? b : a));
+    const c = S.newCrate();
+    S.note(c, `Empty crate issued for ${wh.id}`);
+    const t = launchMover({ trailer: 'flat', container: c, crateJob: true, mission: `Product crate: ${wh.id} → ${term.id} by rail` }, [{ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true }]);
+    if (!t) { WT.unregister(c); return false; }
+    term.pendingDrop++;
+    S.cratesIssued++;
+    return true;
+  }
+
   /* ---------- non-PO flows: distribution, exports, empties ---------- */
   const PLANS = [
     {
@@ -386,10 +418,13 @@
         const tm = terminals().filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 2 && f.exportCount() < 10);
         const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80), 'stuff');
         if (!tm.length || !wh) return false;
-        const term = WT.pick(tm);
-        const dep = active('Container depot').filter((d) => d.count() > 2 && (d.lazyN || 0) < 3);
+        // by sea in a shipping line's box from the depot (rail exports go in the park's own product crates: crateRun)
+        const sea = tm.filter((f) => f.type !== 'Rail terminal');
+        if (!sea.length) return false;
+        const term = WT.pick(sea);
         const legs = [];
         let c = null;
+        const dep = active('Container depot').filter((d) => d.count() > 2 && (d.lazyN || 0) < 3);
         if (dep.length) legs.push({ fac: WT.pick(dep), op: 'pick-empty', lazy: true });
         else { c = S.newContainer(11); S.note(c, 'Empty released from the shipping-line pool'); }
         legs.push({ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true });
@@ -440,7 +475,7 @@
   S.truckCap = () => Math.min(140, 10 + WT.facilities.filter((f) => f.active && f.docks.length).length * 4);
   S.start = function () {
     WT.spawn((function* () {
-      let mrpT = 0, evacT = 0, fleetT = 0;
+      let mrpT = 0, evacT = 0, fleetT = 0, crateT = 0;
       while (true) {
         yield* WT.sleep(0.4);
         mrpT += 0.4;
@@ -449,6 +484,8 @@
         if (evacT > 6 && !S.holding) { evacT = 0; evacuateEmpty(); }
         fleetT += 0.4;
         if (fleetT > 3) { fleetT = 0; planFleet(); }
+        crateT += 0.4;
+        if (crateT > 30 && WT.TR.jam < 0.3) { crateT = 0; crateRun(); }
         // purchase orders always take priority over everything else, but dispatch meters
         // trucks onto the network when the roads are congested
         const jam = WT.TR.jam;
