@@ -273,7 +273,8 @@
 
   /* ---------- forklift ---------- */
   M.forklift = (color = P.orange) => {
-    const g = new T.Group();
+    const model = M.asset('forklift');
+    const g = model || new T.Group();
     const b = new MB();
     b.box(2.9, 0.9, 1.7, color, -0.15, 0.35, 0);
     b.box(0.8, 1.1, 1.72, P.dark, -1.45, 0.35, 0);
@@ -298,7 +299,7 @@
     }
     // beacon
     b.cyl(0.1, 0.1, 0.18, 0xffb020, -0.6, 2.7, 0, 8);
-    g.add(b.mesh());
+    if (!model) g.add(b.mesh());
     const lift = new T.Group();
     lift.position.set(1.75, 0.1, 0);
     const fb = new MB();
@@ -398,6 +399,8 @@
   };
   // locomotive in an operator livery: body colour, stripe colour, 'hood' (road switcher) or 'cab' (full-width carbody)
   M.loco = (color = P.blue, stripe = 0xf6f7fd, style = 'hood') => {
+    const model = M.asset('loco');
+    if (model) return model;
     const b = new MB();
     b.box(13, 0.5, 3.0, 0x2d3352, 0, 0.9, 0);
     if (style === 'cab') {
@@ -428,6 +431,8 @@
 
   /* ---------- aircraft ---------- */
   M.plane = (tail = P.blue) => {
+    const model = M.asset('plane');
+    if (model) return model;
     const g = new T.Group();
     const b = new MB();
     const W = P.white, fy = 4.2, R = 2.5;

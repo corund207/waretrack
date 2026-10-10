@@ -10,6 +10,7 @@
     "start": "node scripts/serve.mjs",
     "start:dist": "npm run build && node scripts/serve.mjs --dist",
     "build": "node scripts/build.mjs",
+    "pack-models": "node scripts/pack-models.mjs",
     "test": "npm run test:static && npm run build && npm run test:sim",
     "test:static": "node tests/static.mjs",
     "test:sim": "node tests/sim.mjs",

@@ -215,7 +215,9 @@ street-turned empties, a container depot, and long lead times for sea freight th
 - `js/core.js`: sim clock, coroutines, path following, traffic yielding
 - `js/look.js`: the lifelike look: physically based materials, real-world palette, procedural grass, asphalt,
   concrete, gravel and water, sky dome with sun, haze and clouds, image-based lighting, night lights
-- `js/models.js`, `js/models_ext.js`: models (merged vertex-coloured geometry with chamfered edges)
+- `js/assets.js`: downloaded 3D models (truck cabs, cars, vans, the 787, locomotives, forklifts): decoded from
+  `js/models_data.js`, fitted to the park and cloned per vehicle; the hand-built models are the fallback
+- `js/models.js`, `js/models_ext.js`: hand-built models (merged vertex-coloured geometry with chamfered edges)
 - `js/world.js`: terrain, highway, coast, instanced forest, plot grid, avenue paving, rail line, road router, pylons
 - `js/fx.js`: smoke, steam and dust particles, and instanced conveyor belts
 - `js/fac_*.js`: facilities (warehouse, factory, rail, port, airport, depot and truck stop, misc)
@@ -233,6 +235,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
 npm install            # dev dependency: puppeteer (headless Chrome for the tests)
 npm test               # static checks → build → simulation test
 npm run screenshots    # regenerate docs/screenshots and docs/social-preview.png
+npm run pack-models    # re-pack assets/models/*.glb into js/models_data.js after changing a model
 ```
 
 - `npm run test:static` parses every script, makes sure every asset referenced by `index.html` exists, and checks that
@@ -255,7 +258,22 @@ npm run screenshots    # regenerate docs/screenshots and docs/social-preview.png
 Deployment needs three repository secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID`. Vercel's own
 Git auto-deploys are switched off in `vercel.json`, so nothing reaches the live site without passing CI.
 
+## Credits
+
+The realistic vehicles are CC BY 4.0 models from Sketchfab, optimised for the park with
+[`scripts/optimise-models.mjs`](scripts/optimise-models.mjs). The full list, with links, is in
+[`assets/models/CREDITS.md`](assets/models/CREDITS.md):
+
+- **DAF XF105** tractor unit by Alvin.Woodly
+- **BMW E30** by roh3d
+- **Mercedes-Benz G-Class** by Lexyc16
+- **DHL delivery van** by maregajavier
+- **Boeing 787 Dreamliner** by maurogsw
+- **Diesel locomotive** by Leaf_dev
+- **Warehouse forklift** by absologixemployee
+
 ## License
 
-[MIT](LICENSE). three.js is © Three.js Authors (MIT).
+[MIT](LICENSE) for the code. three.js is © Three.js Authors (MIT). The 3D models in `assets/models` (and packed in
+`js/models_data.js`) keep their own CC BY 4.0 licences; see [Credits](#credits).
 

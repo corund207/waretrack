@@ -206,6 +206,7 @@ body.has-detail .detail { display: block; animation: pop 0.18s ease-out; }
 .toast.out { opacity: 0; transform: translateY(-6px); }
 @keyframes tin { from { opacity: 0; transform: translateY(-8px); } }
 .hint { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); z-index: 4; font-size: 10.5px; color: #8e95b5; pointer-events: none; white-space: nowrap; }
+.hint a { color: inherit; pointer-events: auto; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1400px) {

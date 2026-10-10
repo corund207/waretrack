@@ -377,14 +377,18 @@
     updateBuildLabels();
   }
 
-  /* ---------- boot ---------- */
-  WT.W.build(scene);
-  WT.G.start();
-  WT.startTraffic();
-  WT.SUP.start();
-  WT.startSeaTraffic();
-  WT.UI.init();
-  resize();
+  /* ---------- boot (once the downloaded models are decoded) ---------- */
+  function boot() {
+    WT.W.build(scene);
+    WT.G.start();
+    WT.startTraffic();
+    WT.SUP.start();
+    WT.startSeaTraffic();
+    WT.UI.init();
+    resize();
+    WT.booted = true;
+    requestAnimationFrame(frame);
+  }
 
   let last = performance.now(), uiT = 0, fcount = 0;
   function frame(nowMs) {
@@ -416,5 +420,5 @@
     renderer.render(scene, cam);
     requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  WT.ASSETS.ready.then(boot);
 })();

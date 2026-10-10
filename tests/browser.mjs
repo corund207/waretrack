@@ -33,7 +33,7 @@ export async function open(siteDir, { width = 1600, height = 900, seed = 7 } = {
     });
   });
   await page.goto(pathToFileURL(join(siteDir, 'index.html')).href);
-  await page.waitForFunction(() => window.WT && WT.facilities && WT.G, { timeout: 60000 });
+  await page.waitForFunction(() => window.WT && WT.booted && WT.facilities && WT.G, { timeout: 60000 });
   await new Promise((r) => setTimeout(r, 1000));
   // Test advances own the simulation clock; rendering must not insert unseeded timing-dependent steps.
   await page.evaluate(() => WT.setPaused(true));

@@ -118,6 +118,8 @@
   /* ---------- cars ---------- */
   M.CAR_COLORS = [0xf6f7fd, 0x2f56e0, 0xd9434b, 0x3a4166, 0xb9bfd8, 0x1aa6b7, 0xf0b429, 0x22263d];
   M.car = (color) => {
+    const model = M.asset('sedan', color);
+    if (model) return model;
     const b = new MB();
     b.box(4.4, 0.9, 1.95, color, 0, 0.35, 0);
     b.box(2.4, 0.8, 1.8, color, -0.3, 1.25, 0);

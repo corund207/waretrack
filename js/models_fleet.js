@@ -72,9 +72,11 @@
     const g = new T.Group();
     const color = o.cab || P.blue, stripe = o.stripe || color, tr = o.trailer || 'box';
     const rigid = tr === 'dump';
-    // ---- tractor (drawn in cab coordinates, then moved forward to clear the trailer's swing)
+    // ---- tractor: the downloaded DAF unit (already fitted to rig coordinates), or one drawn in cab coordinates and
+    // moved forward to clear the trailer's swing
+    const model = !rigid && M.asset('cab', color);
     const t = new MB();
-    cab(t, o.style || 'cabover', color);
+    if (!model) cab(t, o.style || 'cabover', color);
     if (rigid) {
       t.box(14.0, 0.45, 2.3, DARK, -0.6, 0.5, 0);
       t.box(9, 0.4, 2.6, DARK, -1.6, 0.9, 0);
@@ -82,7 +84,7 @@
       t.box(8.2, 0.6, 2.6, 0x9c7a5b, -1.8, 3.5, 0);
       t.sphere(1.2, 0x9c7a5b, -1.8, 3.9, 0, 3, 0.4, 1, 10);
       wheels(t, [-6.0, -4.75], 1.2, 0.6);
-    } else {
+    } else if (!model) {
       t.box(6.6, 0.45, 2.3, DARK, 3.0, 0.5, 0);
       t.cyl(1.0, 1.0, 0.16, 0x3a4166, KINGPIN - TRACTOR_SHIFT, 1.03, 0, 14);
       for (const z of [-1.3, 1.3]) t.box(2.7, 0.12, 0.62, shade(color, 0.7), 1.4, 1.32, z);
@@ -90,8 +92,8 @@
       wheels(t, [0.8, 2.0], 1.2, 0.6);
       guards(t, 0.8, 2.0);
     }
-    const tm = t.mesh();
-    if (!rigid) tm.position.x = TRACTOR_SHIFT;
+    const tm = model || t.mesh();
+    if (!rigid && !model) tm.position.x = TRACTOR_SHIFT;
     g.add(tm);
     const cargo = new T.Group();
     cargo.position.set(-2.0, 1.35, 0);
@@ -364,6 +366,8 @@
 
   M.CAR_KINDS = ['sedan', 'sedan', 'suv', 'van', 'pickup'];
   M.carKind = (color, kind = 'sedan') => {
+    const model = kind === 'pickup' ? null : M.asset(kind, color);
+    if (model) { model.userData.half = 1.1; return model; }
     const b = new MB();
     if (kind === 'suv') {
       b.box(4.7, 1.1, 2.05, color, 0, 0.4, 0);
