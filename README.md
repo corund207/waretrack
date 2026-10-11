@@ -58,8 +58,8 @@ shows which build you are looking at (deployed builds also show the commit hash)
 | Phase | What appears |
 |------|--------------|
 | Founded | Avenue paved, first **warehouse** with dock bays, apron and yard forklifts, and pallet slots |
-| Manufacturing | **Factories** in three tiers (refining → components → final assembly), every kind with a building design of its own (blast furnace and coke ovens, potline, distillation columns, clean room, high-bay press hall, test cells…). Refining and component plants grow in **pods on the Production Ring**; final assembly sits in the park, with a conveyor bridge carrying cartons into the paired warehouse |
-| Rail freight | A track-laying train builds the double-track **mainline**. **Rail terminals** get two sidings, so two trains are worked at once, three gantry cranes over a 34-slot stack and five truck spots. A freight call goes out for every free siding with cargo booked, mine trains run whenever the container works can load one, and through freight keeps to the westbound main. Besides a yard on each park avenue (except the airfield's), three more yards open out along the mainline at −840, −1080 and 1320, each paving its own access avenue |
+| Manufacturing | **Factories** in three tiers (refining → components → final assembly), every kind with a building design of its own (blast furnace and coke ovens, potline, distillation columns, clean room, high-bay press hall, test cells…). Every plant grows in an **industrial pod** west of the park with its own rail depot, joined by a rail hub and branch lines; final assembly belts its cartons into a distribution centre next door |
+| Rail freight | A track-laying train builds the double-track **mainline**. **Rail terminals** get two sidings, so two trains are worked at once, three gantry cranes over a 34-slot stack and five truck spots. A freight call goes out for every free siding with cargo booked, mine trains run whenever the container works can load one, and through freight keeps to the westbound main. Besides a yard on each park avenue (except the airfield's), one more yard opens out along the mainline at 1320, paving its own access avenue (the west belongs to the industrial pods) |
 | Seaport | **Port terminals** with ship-to-shore cranes. Feeder vessels berth, unload and load, and cargo ships pass offshore |
 | Air cargo | **Airfield**, cargo terminal with landside belt docks, 4 stands with ULD tugs, and a control tower. Freighters fly in over the park, land, turn around and take off |
 | Mega hub | Power plants with steaming cooling towers and pylon lines, **container depots**, a **truck stop** with fuel canopies and a diner, cold-storage, fulfilment and bulk warehouses, substations, water towers, solar farms, tank farms, an HQ tower and staff parking with shuttle-bus stops, filling about 100 plots across 6 avenues |
@@ -108,15 +108,24 @@ The **Orders** tab follows every order from placement to delivery.
 
 **Multi-stage industry**
 
-Production runs in **three tiers**. Refining and components grow on the **Production Ring**, south of the highway west
-of the park: four **pods** set apart by forest, each three plants and a **rail depot** on an avenue of its own (−1440
-and −960). Pod A · Metals and Pod B · Materials refine; Pod C · Drives & Circuits and Pod D · Bodies & Fittings make
-components. A **loop line** runs round the green between the pods and ring shuttles circulate on it. A transfer
-between pods rides the ring: a mover loads a container at the shipping dock and drops it at its pod depot, the depot
-gantry puts it on the next shuttle, and a mover collects it at the other pod. The empty box rides home to its pod's
-pool. A second plant of a kind clusters in the park: refineries on the west avenues (−360, −600), component plants on
-the east (360, 600). Final assembly sits with its distribution centres in the middle (−120, 120). A full district
-spills onto any free plot.
+Production runs in **three tiers**, and none of it in the park itself: every factory has its own plot in an
+**industrial pod** west of the park, the pods set apart by forest, each with a **rail depot** of its own. Pods A · Metals
+and B · Materials refine and pods C · Drives & Circuits and D · Bodies & Fittings make components, south of the
+highway. Pods E and F do final assembly north of it, each line belting its cartons into a distribution centre next
+door. One plant of each kind supplies every line that uses its output.
+
+The pods are joined by an **industrial rail network**. Its heart is a circular **rail hub**, a one-way roundabout for
+trains. Branch lines leave it to every pod: a double-track line on a viaduct over the highway to the southern pods'
+loop, and a side loop past each northern pod's depot. Links join the mainline: in from the eastbound main, and out
+across it onto the westbound one. Every track is one-way, so trains only ever follow or merge, and they take a
+junction only when it is clear.
+
+- **Ring shuttles** carry boxes between pods. A mover loads a container at the shipping dock and drops it at the
+  pod's depot, the depot gantry puts it on the next shuttle, and a mover collects it at the other pod. The empty
+  rides home to its pod's pool.
+- **Industrial freight** runs in from the edge of the map with imports for the pods, straight to their depots, and
+  takes the pods' product crates away.
+- Ore and other mined materials still come through the park's rail yards.
 
 | Tier 1 · Refining | Turns | Into |
 |-------------------|-------|------|
@@ -235,7 +244,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
 - **Auto camera** (on by default, **C**) cuts to new construction, freighters on approach, trains arriving and ships
   berthing. Between events it follows trucks, shows factory belts and gives slow orbits and overviews. Any mouse or
   keyboard input hands you control, and it resumes after 30 s.
-- The **Ring** chip flies to the Production Ring.
+- The **Ring** chip flies to the industrial pods and the rail hub.
 - **Cinema mode** (**U**) hides the dashboard and leaves a slim status ticker.
 - **Dark mode** (**N**, or the moon button in the map toolbar) switches the dashboard to dark and the park to night:
   a moonlit sky, with street lamps, headlights and office windows lit. It follows your system setting until you
@@ -256,7 +265,7 @@ street-turned empties, a container depot, and long lead times for sea freight th
 - `js/fx.js`: smoke, steam and dust particles, and instanced conveyor belts
 - `js/fac_*.js`: facilities (warehouse, factory, rail, port, airport, depot and truck stop, misc)
 - `js/plant_designs.js`: a building design for every kind of plant
-- `js/ring.js`: the Production Ring: pods, loop line, pod rail depots, ring shuttles
+- `js/ring.js`: the industrial pods and their rail network: hub, branch lines, depots, shuttles, industrial freight
 - `js/traffic.js`: traffic engine (avoidance, signals, gates), vehicles, multi-leg missions, ambient traffic
 - `js/supply.js`: materials, recipes, container contents and journeys, demand-driven dispatcher
 - `js/models_fleet.js`: rigs and trailers, cars and buses, wagons, ships, signals, barriers, lamps

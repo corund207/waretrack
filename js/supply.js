@@ -430,9 +430,13 @@
   function crateRun() {
     const yards = active('Rail terminal').filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 2 && f.exportCount() < 10);
     const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80), 'stuff');
-    if (!yards.length || !wh) return false;
+    if (!wh) return false;
+    // a pod's distribution centre sends its crates from the pod's own rail depot, for industrial freight
+    const pd = WT.RING.serves(wh) && wh.pod.depot;
+    if (pd && (spotsFree(pd) < 1 || pd.roomFor() < 3)) return false;
+    if (!pd && !yards.length) return false;
     const [wx, wz] = wh.center();
-    const term = yards.reduce((a, b) => (Math.hypot(b.center()[0] - wx, b.center()[1] - wz) < Math.hypot(a.center()[0] - wx, a.center()[1] - wz) ? b : a));
+    const term = pd || yards.reduce((a, b) => (Math.hypot(b.center()[0] - wx, b.center()[1] - wz) < Math.hypot(a.center()[0] - wx, a.center()[1] - wz) ? b : a));
     const c = S.newCrate();
     S.note(c, `Empty crate issued for ${wh.id}`);
     const t = launchMover({ trailer: 'flat', container: c, crateJob: true, mission: `Product crate: ${wh.id} → ${term.id} by rail` }, [{ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true }]);

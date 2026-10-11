@@ -123,7 +123,7 @@ try {
       moverDepots: facs.filter((f) => f.type === 'Mover depot').length,
       cratesIssued: WT.SUP.cratesIssued, cratesRailed: WT.SUP.cratesRailed,
       moversDelivered: facs.filter((f) => f.type === 'Mover depot').reduce((n, f) => n + f.delivered, 0),
-      ring: { depots: facs.filter((f) => f.type === 'Ring depot').length, podPlants: plants.filter((f) => f.pod).length, shuttles: WT.RING.trains.length, ...WT.RING.stats,
+      ring: { depots: facs.filter((f) => f.type === 'Ring depot').length, podPlants: plants.filter((f) => f.pod).length, parkPlants: plants.filter((f) => !f.pod).map((f) => f.id), shuttles: WT.RING.trains.filter((t) => t.role === 'shuttle').length, ...WT.RING.stats,
         delivered: WT.SUP.orders.filter((o) => o.ring && o.status === 'Delivered').length },
       moverDeliveries: WT.SUP.orders.filter((o) => o.status === 'Delivered' && o.events.some((e) => /^Mover assigned|^Collecting/.test(e.text))).length,
     };
@@ -144,8 +144,10 @@ try {
   check(st.roadOrders === 0 && st.truckIntake === 0, 'no resources are trucked in by road (every order uses a trunk carrier)');
   check(st.moverDeliveries > 20, `${st.moverDeliveries} of the latest orders delivered to plants by autonomous container movers (${st.movers} active)`);
   check(st.semiAtTerminal.length === 0, 'only autonomous movers collect or drop containers at rail and port terminals' + (st.semiAtTerminal.length ? ': ' + [...new Set(st.semiAtTerminal)].slice(0, 3).join(' | ') : ''));
-  check(st.ring.depots >= 3 && st.ring.shuttles >= 2 && st.ring.podPlants >= 4, `Production Ring: ${st.ring.podPlants} pod plants, ${st.ring.depots} pod depots, ${st.ring.shuttles} shuttles`);
-  check(st.ring.moved > 0 && st.ring.delivered > 0, `${st.ring.moved} boxes carried between pods by ring shuttle, ${st.ring.delivered} ring transfers delivered (${st.ring.empties} empties home, ${st.ring.calls} depot calls)`);
+  check(st.ring.parkPlants.length === 0 && st.ring.podPlants >= 10, `every factory sits in an industrial pod (${st.ring.podPlants} in pods${st.ring.parkPlants.length ? ', in the park: ' + st.ring.parkPlants.join(', ') : ''})`);
+  check(st.ring.depots >= 4 && st.ring.shuttles >= 2, `rail hub: ${st.ring.depots} pod depots, ${st.ring.shuttles} ring shuttles`);
+  check(st.ring.delivered > 0 && st.ring.calls > 10, `${st.ring.delivered} transfers delivered between pods by rail (${st.ring.moved} boxes off trains, ${st.ring.empties} empties home, ${st.ring.calls} depot calls)`);
+  check(st.ring.freight > 0 && st.ring.imported > 0, `${st.ring.freight} industrial freight trains brought ${st.ring.imported} import boxes straight to the pods (${st.ring.exported} crates out)`);
   check(st.cratesRailed > 0, `${st.cratesRailed} product crates left by rail (${st.cratesIssued} issued to distribution centres)`);
   check(st.moverDepots >= 1 && st.fleet.size > 20 && st.moversDelivered > 0, `mover fleet grew to ${st.fleet.size} (${st.moversDelivered} delivered by lowloader, ${st.moverDepots} depot${st.moverDepots > 1 ? 's' : ''}, ${st.fleet.out} on jobs)`);
   console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);

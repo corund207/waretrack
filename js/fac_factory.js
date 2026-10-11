@@ -32,7 +32,6 @@
       this.recipe = S.PLANTS[name];
       this.intermediate = !!this.recipe.out;
       this.tier = this.recipe.tier;
-      this.pod = (plot && plot.pod) || null; // a plant in one of the Production Ring's pods
       this.partner = this.intermediate ? null : partner || null;
       this.line = { name, colors: this.recipe.colors };
       this.name = this.intermediate ? name : name + ' Plant';
@@ -172,6 +171,8 @@
       // refining runs fastest; a component plant draws at a rate two refineries' worth of stock can keep up with, and
       // final assembly at a rate one component plant feeds two lines
       const need = { 1: 0.4, 2: 0.22, 3: 0.1 }[this.tier] || 0.12;
+      // one plant of each kind serves every line that uses its output: each unit of input yields two of output
+      const yieldK = this.tier === 1 ? 2 : this.tier === 2 ? 2.2 : 1;
       while (true) {
         const dt = WT.sim.dt;
         tIn += dt; tMid += dt; tOut += dt; tCycle += dt;
@@ -183,7 +184,7 @@
           tCycle = 0;
           if (running) {
             for (const m of this.recipe.in) this.stock[m] -= need;
-            if (this.intermediate) { this.outStock = Math.min(this.outCap, this.outStock + need); this.produced += need; WT.G && WT.G.earn(300, this); }
+            if (this.intermediate) { this.outStock = Math.min(this.outCap, this.outStock + need * yieldK); this.produced += need * yieldK; WT.G && WT.G.earn(300, this); }
           }
           for (const m of this.recipe.in) this.piles[m].set(this.stock[m] / this.cap);
           if (this.outPile) this.outPile.set(this.outStock / this.outCap);

@@ -11,7 +11,7 @@
   W.AVENUES = [-120, 120, -360, 360, -600, 600];
   W.EDGE = 1700;
   // extra rail yards beyond the park grid, each on an access avenue of its own along the mainline (600 is the airfield)
-  W.YARD_SITES = [-840, 1320, -1080];
+  W.YARD_SITES = [1320]; // (the west of the park belongs to the industrial pods and their rail network: js/ring.js)
   // the Production Ring's two pod avenues, south of the highway west of the park (js/ring.js)
   W.RING_AVENUES = [-1440, -960];
   W.SEA_Z = 600;

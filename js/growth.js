@@ -39,13 +39,6 @@
   const usedOn = (A) => W.plots.filter((p) => p.A === A && p.used).length;
   const has = (type, pred = () => true) => WT.facilities.some((f) => f.type === type && pred(f));
   const count = (type) => WT.facilities.filter((f) => f.type === type).length;
-  function freePair(avenues = W.AVENUES) {
-    for (const A of avenues) for (let k = 0; k < W.PLOT_K - 1; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
-      const a = W.plotAt(A, s, h, k), b = W.plotAt(A, s, h, k + 1);
-      if (a && b && !a.used && !b.used) return [a, b];
-    }
-    return null;
-  }
   function freePlot(avenues = W.AVENUES) {
     for (const A of avenues) for (let k = 0; k < W.PLOT_K; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
       const p = W.plotAt(A, s, h, k);
@@ -53,14 +46,9 @@
     }
     return null;
   }
-  // Industrial districts: refining and component plants go to their pod on the Production Ring (js/ring.js), one of
-  // each kind; any more of a kind cluster in the park, refineries on the west avenues by the ore trains, component
-  // plants on the east side. Final assembly sits with its distribution centres in the middle. A full district
-  // spills onto any free plot.
-  const DISTRICT = { 1: [-360, -600], 2: [360, 600], 3: [-120, 120] };
-  G.DISTRICT = DISTRICT;
-  const plotForTier = (tier) => freePlot(DISTRICT[tier]) || freePlot();
-  const plotFor = (name) => WT.RING.slotFor(name) || plotForTier(WT.SUP.PLANTS[name].tier);
+  // No production in the park itself: every factory has its own plot in an industrial pod west of the park
+  // (js/ring.js), refining and components south of the highway, final assembly with its distribution centres north
+  // of it. One plant of each kind, sized to supply every line that uses its output.
   const ring = WT.RING;
   // how many plants (any tier) use material m, and how many plants make it
   const usersOf = (m) => WT.facilities.filter((f) => f.type === 'Factory' && f.recipe.in.includes(m)).length;
@@ -84,10 +72,10 @@
     if (queue.length) return queue[0];
     const A0 = -120, plots = (A, s, h, k) => W.plotAt(A, s, h, k);
     const script = [
-      () => project('Warehouse', () => new WT.Warehouse(plots(A0, 1, -1, 0), 'dc')),
-      () => project('Factory', () => new WT.Factory(plots(A0, 1, -1, 1), find('WH-01'), 'Appliances')),
-      () => project('Warehouse', () => new WT.Warehouse(plots(A0, -1, -1, 0), 'bulk')),
-      () => project('Factory', () => new WT.Factory(plots(A0, -1, -1, 1), find('WH-02'), 'Auto Parts')),
+      () => project('Warehouse', () => new WT.Warehouse(ring.dcSlot('Appliances'), 'dc')),
+      () => project('Factory', () => new WT.Factory(ring.slotFor('Appliances'), ring.dcOf('Appliances'), 'Appliances')),
+      () => project('Warehouse', () => new WT.Warehouse(ring.dcSlot('Auto Parts'), 'bulk')),
+      () => project('Factory', () => new WT.Factory(ring.slotFor('Auto Parts'), ring.dcOf('Auto Parts'), 'Auto Parts')),
       () => project('Rail line', null),
       // the mover fleet must be in place before the first terminal: every container leaves it on a mover
       () => project('Mover depot', () => new WT.MoverDepot(plots(A0, 1, 1, 1))),
@@ -95,15 +83,16 @@
       () => project('Steel Mill', () => new WT.Factory(ring.slotFor('Steel Mill'), null, 'Steel Mill')),
       () => project('Container depot', () => new WT.Depot(plots(A0, -1, 1, 0))),
       () => project('Power plant', () => new WT.PowerPlant(plots(A0, 1, 1, 0))),
-      () => project('Warehouse', () => new WT.Warehouse(plots(120, 1, -1, 0), 'fulfil')),
-      () => project('Factory', () => new WT.Factory(plots(120, 1, -1, 1), find('WH-03'), 'Electronics')),
+      () => project('Warehouse', () => new WT.Warehouse(ring.dcSlot('Electronics'), 'fulfil')),
+      () => project('Factory', () => new WT.Factory(ring.slotFor('Electronics'), ring.dcOf('Electronics'), 'Electronics')),
       () => project('Truck stop', () => new WT.TruckStop(plots(120, -1, 1, 0))),
       () => project('Port terminal', () => new WT.Port(A0)),
       () => project('Chemical Plant', () => new WT.Factory(ring.slotFor('Chemical Plant'), null, 'Chemical Plant')),
       () => project('Copper Refinery', () => new WT.Factory(ring.slotFor('Copper Refinery'), null, 'Copper Refinery')),
       () => project('Motor Works', () => new WT.Factory(ring.slotFor('Motor Works'), null, 'Motor Works')),
-      // the loop line between the pods, then a rail depot for each pod that has a plant
-      () => project('Production ring', null),
+      // the rail hub and its branch lines, then a rail depot for each pod that has a plant
+      () => project('Production ring', null, { label: 'Rail hub + branch lines' }),
+      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[4]), { label: 'Pod E rail depot' }),
       () => project('Ring depot', () => new WT.RingDepot(ring.PODS[0]), { label: 'Pod A rail depot' }),
       () => project('Ring depot', () => new WT.RingDepot(ring.PODS[2]), { label: 'Pod C rail depot' }),
       () => project('Ring depot', () => new WT.RingDepot(ring.PODS[1]), { label: 'Pod B rail depot' }),
@@ -149,12 +138,12 @@
       const p = depotPlot();
       if (p) { p.used = 'planned'; WT.SUP.needMoverDepot = false; queue.push(project('Mover depot', () => new WT.MoverDepot(p), { plot: p })); return queue[0]; }
     }
-    // upstream industry, tier by tier: a component plant once enough assembly lines use its part, a refinery once
-    // enough component plants (or lines) use its stock, each in its own district
+    // upstream industry, tier by tier: a component plant once a line uses its part, a refinery once a plant uses its
+    // stock, each on its own plot in its pod
     for (const name of WT.SUP.INTERMEDIATE) {
       const r = WT.SUP.PLANTS[name], users = usersOf(r.out), makers = makersOf(name);
-      if (users && users > makers * 2) {
-        const p = plotFor(name);
+      if (users && !makers) {
+        const p = ring.slotFor(name);
         if (p) { p.used = 'planned'; queue.push(project(name, () => new WT.Factory(p, null, name), { plot: p, label: name })); return queue[0]; }
       }
     }
@@ -173,23 +162,16 @@
         return queue[0];
       }
     }
-    const pair = freePair(DISTRICT[3]) || freePair();
-    if (pair) {
-      pair[0].used = pair[1].used = 'planned';
-      let wh = null;
-      queue.push(project('Warehouse', () => (wh = new WT.Warehouse(pair[0], WT.pick(['dc', 'cold', 'fulfil', 'bulk', 'dc'])))));
-      const lines = WT.SUP.ASSEMBLY.slice().sort((x, y) => count2(x) - count2(y) + (Math.random() - 0.5));
-      const line = lines[0];
-      queue.push(project('Factory', () => new WT.Factory(pair[1], wh, line), { label: line + ' Plant' }));
-      // supply chain: every other new assembly line also brings the component plant for its scarcest part
-      if (Math.random() < 0.5) {
-        const need = WT.SUP.COMPONENTS.map((name) => {
-          const out = WT.SUP.PLANTS[name].out;
-          return { name, gap: usersOf(out) + (WT.SUP.PLANTS[line].in.includes(out) ? 1 : 0) - makersOf(name) * 2 };
-        }).sort((a, b) => b.gap - a.gap)[0];
-        const p = need && need.gap > 0 && plotFor(need.name);
-        if (p) { p.used = 'planned'; queue.push(project(need.name, () => new WT.Factory(p, null, need.name), { plot: p, label: need.name })); }
+    // the next assembly line its pod has room for, with its distribution centre if that is not there yet
+    const line = WT.SUP.ASSEMBLY.find((n) => !count2(n) && ring.slotFor(n));
+    if (line) {
+      const lp = ring.slotFor(line), dp = ring.dcSlot(line);
+      if (!dp.used) {
+        dp.used = 'planned';
+        queue.push(project('Warehouse', () => new WT.Warehouse(dp, WT.pick(['dc', 'cold', 'fulfil', 'bulk', 'dc'])), { plot: dp }));
       }
+      lp.used = 'planned';
+      queue.push(project('Factory', () => new WT.Factory(lp, ring.dcOf(line), line), { plot: lp, label: line + ' Plant' }));
       return queue[0];
     }
     const p = freePlot();
@@ -200,7 +182,6 @@
     }
     return null;
   }
-  const find = (id) => WT.facilities.find((f) => f.id === id);
   const count2 = (line) => WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === line).length;
   G.next = () => plan();
 

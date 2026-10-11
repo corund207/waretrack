@@ -192,7 +192,7 @@
       if (!WT.RING.built && !WT.facilities.some((x) => x.pod)) { showToast({ msg: 'Production Ring not built yet — keep watching!', tone: 'amber' }); return; }
       WT.Cinema.userInput();
       WT.select(null);
-      WT.flyTo(WT.RING.center[0], WT.RING.center[1], 720);
+      WT.flyTo(WT.RING.center[0], WT.RING.center[1], 1250);
       return;
     }
     if (a === 'newest') f = WT.facilities[WT.facilities.length - 1];

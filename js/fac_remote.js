@@ -51,7 +51,7 @@
   // any train car within 3 m of this z, ahead of x (eastbound) and closer than `gap`
   function gapAhead(tr, hx, hz) {
     let best = Infinity;
-    for (const o of WT.trains) {
+    for (const o of [...WT.trains, ...WT.RING.trains]) {
       if (o === tr) continue;
       for (const c of o.cars) {
         const p = c.g.position;
@@ -60,7 +60,7 @@
     }
     return best;
   }
-  const mainClear = (x0, x1) => WT.trains.every((o) => o.cars.every((c) => Math.abs(c.g.position.z - RAIL().zE) > 3 || c.g.position.x < x0 || c.g.position.x > x1));
+  const mainClear = (x0, x1) => !WT.RING.crossingHeld((x0 + x1) / 2) && [...WT.trains, ...WT.RING.trains].every((o) => o.cars.every((c) => Math.abs(c.g.position.z - RAIL().zE) > 3 || c.g.position.x < x0 || c.g.position.x > x1));
   // drive a train along pts, stopping at each stop ({ at(p): bool, fn: generator }) in order
   function* runOn(tr, pts, stops) {
     tr.path = WT.buildPath(pts, 30);

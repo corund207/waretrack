@@ -56,6 +56,7 @@
       this.id = WT.nextFacId(prefix);
       this.name = name;
       this.plot = plot || null;
+      this.pod = (plot && plot.pod) || null; // an industrial pod's plot (js/ring.js)
       this.group = new T.Group();
       if (plot) {
         this.group.position.set(plot.A + 8 * plot.s, 0, plot.zc);

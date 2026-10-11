@@ -127,6 +127,12 @@
         const gap = (o.tailX() - hx) * dir;
         if (o.headX() * dir > hx * dir && gap < 160) target = Math.min(target, Math.sqrt(2 * 2 * Math.max(0, gap - 30)));
       }
+      // ... and from industrial trains joining, leaving or crossing the main (js/ring.js)
+      const hz = tr.cars[0].g.position.z;
+      for (const o of WT.RING.trains) for (const c of o.cars) {
+        const p = c.g.position, gap = (p.x - hx) * dir;
+        if (Math.abs(p.z - hz) < 3 && gap > 0 && gap < 160) target = Math.min(target, Math.sqrt(2 * 2 * Math.max(0, gap - 30)));
+      }
       v += WT.clamp(target - v, -3 * dt, 2.2 * dt);
       tr.v = v;
       s += v * dt;
@@ -401,7 +407,7 @@
     WT.spawn(runTrain(tr));
   }
   // a freight call appears 800 m short of its yard: only when no other train is there
-  const clearAt = (x) => WT.trains.every((o) => o.cars.every((c) => Math.abs(c.g.position.z - W.RAIL.zE) > 3 || Math.abs(c.g.position.x - x) > 220));
+  const clearAt = (x) => !WT.RING.crossingHeld(x) && [...WT.trains, ...WT.RING.trains].every((o) => o.cars.every((c) => Math.abs(c.g.position.z - W.RAIL.zE) > 3 || Math.abs(c.g.position.x - x) > 220));
   // every few seconds: a mine train whenever the container works is free to load one, an empties train when a yard has
   // a cut ready, and a freight call for every free siding with booked cargo or exports waiting
   function dispatch() {
@@ -423,7 +429,8 @@
         if (manifest.length) { R.mineTrain(site, term, manifest); sent++; }
       }
     }
-    const general = (po) => !(R && R.siteFor && R.siteFor(po.mat));
+    // (pod plants get theirs from industrial freight once their depot runs: js/ring.js)
+    const general = (po) => !(R && R.siteFor && R.siteFor(po.mat)) && !WT.RING.serves(po.to);
     for (const term of open().sort((a, b) => b.exportCount() - a.exportCount())) {
       if (!clearAt(term.A - 800)) continue;
       const cargo = S.backlog.rail.some(general);
