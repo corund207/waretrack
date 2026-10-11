@@ -170,7 +170,7 @@
   /* ---------- live loads: what an open trailer or open-frame container is carrying ---------- */
   // Instances are ordered bottom-up, so unloading takes from the top and loading stacks upward.
   const LOAD_KIND = { steel: 'coils', timber: 'logs', lumber: 'planks', wire: 'reels', iron: 'heap', ore: 'heap', sand: 'heap', fabric: 'crates', comp: 'crates', glass: 'panes',
-    coal: 'heap', bauxite: 'heap', grain: 'heap', alum: 'planks' };
+    coal: 'heap', bauxite: 'heap', grain: 'heap', alum: 'planks', copper: 'planks', panels: 'planks', frames: 'planks', motors: 'reels' };
   M.loadKind = (mat) => LOAD_KIND[mat] || 'crates';
   const LGEO = {
     coils: new T.CylinderGeometry(0.95, 0.95, 1.7, 16).rotateZ(Math.PI / 2),

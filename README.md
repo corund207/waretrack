@@ -58,7 +58,7 @@ shows which build you are looking at (deployed builds also show the commit hash)
 | Phase | What appears |
 |------|--------------|
 | Founded | Avenue paved, first **warehouse** with dock bays, apron and yard forklifts, and pallet slots |
-| Manufacturing | **Factories**: ore silos → smelter (glowing ingots on an elevated belt) → sawtooth assembly hall → a conveyor bridge carrying cartons into the paired warehouse, with smoking chimneys |
+| Manufacturing | **Factories** in three tiers (refining → components → final assembly), each tier in its own district: ore silos → smelter (glowing ingots on an elevated belt) → sawtooth assembly hall → a conveyor bridge carrying cartons into the paired warehouse, with smoking chimneys |
 | Rail freight | A track-laying train builds the double-track **mainline**. **Rail terminals** get two sidings, so two trains are worked at once, three gantry cranes over a 34-slot stack and five truck spots. A freight call goes out for every free siding with cargo booked, mine trains run whenever the container works can load one, and through freight keeps to the westbound main. Besides a yard on each park avenue (except the airfield's), three more yards open out along the mainline at −840, −1080 and 1320, each paving its own access avenue |
 | Seaport | **Port terminals** with ship-to-shore cranes. Feeder vessels berth, unload and load, and cargo ships pass offshore |
 | Air cargo | **Airfield**, cargo terminal with landside belt docks, 4 stands with ULD tugs, and a control tower. Freighters fly in over the park, land, turn around and take off |
@@ -108,19 +108,46 @@ The **Orders** tab follows every order from placement to delivery.
 
 **Multi-stage industry**
 
-| Primary plant | Turns | Into | Supplies |
-|---------------|-------|------|----------|
-| Steel Mill | Iron ore (sea/rail) | Steel coils | Appliances, Auto Parts |
-| Copper Refinery | Copper ore (sea/rail) | Copper wire | Electronics |
-| Chemical Plant | Chemicals + propane (pipeline/rail) | Plastic resin | Electronics, Appliances |
-| Sawmill | Timber logs | Lumber | Furniture |
-| Glass Works | Silica sand (rail) | Float glass | Beverages |
+Production runs in **three tiers**, each built in its own **district** of the park: refineries on the west avenues
+(−360, −600) by the ore trains, component plants on the east (360, 600), and final assembly with its distribution
+centres in the middle (−120, 120). A full district spills onto any free plot.
 
-Assembly plants (Electronics, Appliances, Auto Parts, Beverages, Furniture, Pharma) send finished cartons over a belt
-bridge into their paired warehouse. From there, goods go out to customers, to the airport, or into export containers
-that leave on trains and ships. Until a primary plant exists, its product is imported by rail or sea. The planner builds a new
-primary plant once enough assembly lines depend on it. Plants starve, visibly and on their cards, when a delivery is
-late, and run out of space ("Output full") when nobody collects.
+| Tier 1 · Refining | Turns | Into |
+|-------------------|-------|------|
+| Steel Mill | Iron ore + coal | Steel coils |
+| Copper Refinery | Copper ore | Copper cathodes |
+| Aluminium Smelter | Bauxite | Aluminium ingots |
+| Chemical Plant | Chemicals + propane | Plastic resin |
+| Sawmill | Timber logs | Lumber |
+| Glass Works | Silica sand + propane | Float glass |
+
+| Tier 2 · Components | Turns | Into |
+|---------------------|-------|------|
+| Wire Mill | Copper cathodes | Copper wire |
+| Motor Works | Steel + copper wire | Electric motors |
+| Circuit Fab | Copper + resin + electronic components | Circuit boards |
+| Panel Press | Steel + aluminium | Body panels |
+| Moulding Shop | Resin | Plastic housings |
+| Frame Shop | Lumber + steel | Furniture frames |
+
+| Tier 3 · Final assembly | From |
+|-------------------------|------|
+| Electronics | Circuit boards + housings + glass |
+| Appliances | Motors + body panels + housings |
+| Auto Parts | Motors + body panels + circuit boards |
+| E-Bikes | Motors + aluminium + circuit boards |
+| Solar Panels | Glass + aluminium + circuit boards |
+| Machinery | Motors + steel + circuit boards |
+| Furniture | Frames + textiles |
+| Beverages | Glass + syrup + grain |
+| Pharma | Chemicals + electronic components |
+
+Final-assembly plants send finished cartons over a belt bridge into their paired distribution centre. From there,
+goods go out to customers, to the airport, into export containers for the seaport, or into **WareTrack product
+crates** for the railway. Until the park makes a material itself, it is imported by rail or sea. The planner builds
+supply bottom-up: a component plant once enough assembly lines use its part, a refinery once enough component plants
+(or lines) use its stock. Plants starve, visibly and on their cards, when a delivery is late, and run out of space
+("Output full") when nobody collects. The **Supply** tab lists every plant by tier.
 
 **Loads you can see.** Raw materials from ships and trains travel in **open-frame containers**: open-tops heaped
 with ore or sand, and flat-racks carrying crates or glass on A-frame racks. Cranes lift them with the cargo in plain

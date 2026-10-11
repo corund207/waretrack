@@ -297,11 +297,12 @@
       }
     } else if (tab === 'supply') {
       const S = WT.SUP;
-      for (const f of facs) {
+      // the chain in order: refining → components → final assembly
+      for (const f of facs.slice().sort((a, b) => (a.tier || 9) - (b.tier || 9))) {
         const bars = f.recipe.in.map((m) => { const p = Math.round(WT.clamp(f.stock[m] / f.cap, 0, 1) * 100); return `<span class="sb" title="${esc(S.MAT[m].name)}"><i class="${p < 15 ? 'low' : p < 40 ? 'mid' : ''}" style="height:${p}%"></i></span>`; }).join('');
         const inb = f.recipe.in.reduce((n, m) => n + S.openCount(f, m), 0);
         const outBar = f.intermediate ? `<span class="sb out"><i style="height:${Math.round((f.outStock / f.outCap) * 100)}%"></i></span>` : '';
-        rows += row(f.uid, f.id, f.lineName, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
+        rows += row(f.uid, f.id, `T${f.tier} · ${f.lineName}`, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
       }
       for (const t of act.filter((x) => x.type === 'Rail terminal' || x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, (t.trainsIn ? t.trainsIn().length : t.busy && t.busy !== 'incoming') ? 'Vessel/train in' : 'Open', 'blue', '');
       for (const d of act.filter((x) => x.type === 'Container depot')) rows += row(d.uid, d.id, 'Depot', `${d.count()} empties stored`, 'Open', 'green', '');

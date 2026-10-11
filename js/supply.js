@@ -17,35 +17,61 @@
     timber: { name: 'Timber logs', size: 18, modes: ['rail'], pack: 'container', item: 'log', colors: [0xa0754e, 0xb58a5d, 0x8f6644] },
     chem: { name: 'Chemicals', size: 20, modes: ['pipe', 'rail'], pack: 'tanker' },
     syrup: { name: 'Syrup concentrate', size: 20, modes: ['rail'], pack: 'tanker' },
+    // tier 1 · refined: what the refining district makes from raw ore, logs and feedstock
     steel: { name: 'Steel coils', size: 18, modes: ['internal', 'rail'], pack: 'container', item: 'can', colors: [0xb8c2dc, 0x9aa1c4] },
-    wire: { name: 'Copper wire', size: 14, modes: ['internal', 'sea'], pack: 'container', item: 'can', colors: [0xc87533, 0xb86a2c] },
+    copper: { name: 'Copper cathodes', size: 16, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'ingot', colors: [0xc87533, 0xb86a2c, 0xd08040] },
     resin: { name: 'Plastic resin', size: 20, modes: ['internal', 'rail'], pack: 'tanker' },
     lumber: { name: 'Lumber', size: 18, modes: ['internal', 'rail'], pack: 'container', item: 'plank', colors: [0xdcb47e, 0xe2c79b] },
     glass: { name: 'Float glass', size: 16, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'carton', colors: [0xbfe3f2, 0xd6eef7, 0xa9d6ea] },
+    // tier 2 · components: made in the component district from refined stock (imported until the park makes its own)
+    wire: { name: 'Copper wire', size: 14, modes: ['internal', 'sea'], pack: 'container', item: 'can', colors: [0xc87533, 0xb86a2c] },
+    motors: { name: 'Electric motors', size: 10, modes: ['internal', 'sea'], pack: 'container', item: 'can', colors: [0x4a5578, 0x3a4166, 0xc87533] },
+    boards: { name: 'Circuit boards', size: 8, modes: ['internal', 'sea'], pack: 'container', item: 'carton', colors: [0x37b26c, 0x2f8f57, 0x2a6e47] },
+    panels: { name: 'Body panels', size: 14, modes: ['internal', 'rail'], pack: 'container', item: 'plank', colors: [0xd9dde8, 0x9aa1c4, 0xc3c9d9] },
+    housings: { name: 'Plastic housings', size: 12, modes: ['internal', 'sea'], pack: 'container', item: 'carton', colors: [0xf6f7fd, 0x3a3f52, 0x2f56e0] },
+    frames: { name: 'Furniture frames', size: 14, modes: ['internal', 'rail'], pack: 'container', item: 'plank', colors: [0xb98b55, 0xa0754e] },
     // hinterland materials: mined, quarried and grown at remote sites and railed in; propane by pipeline
     coal: { name: 'Coal', size: 24, modes: ['rail'], pack: 'container', item: 'ore', colors: [0x2b2f3d, 0x3a3f52, 0x22263d] },
     bauxite: { name: 'Bauxite', size: 22, modes: ['rail'], pack: 'container', item: 'ore', colors: [0xb5543d, 0xa04a36, 0xc56a4f] },
     grain: { name: 'Grain', size: 20, modes: ['rail'], pack: 'container', item: 'ore', colors: [0xe2c46b, 0xd6b45a, 0xecd48a] },
     lpg: { name: 'Propane (LPG)', size: 20, modes: ['pipe', 'rail'], pack: 'tanker' },
-    alum: { name: 'Aluminium', size: 16, modes: ['internal', 'rail'], pack: 'container', item: 'ingot', colors: [0xd9dde8, 0xc3c9d9] },
+    alum: { name: 'Aluminium ingots', size: 16, modes: ['internal', 'rail'], pack: 'container', item: 'ingot', colors: [0xd9dde8, 0xc3c9d9] },
   };
-  // intermediate plants feed assembly plants inside the park
+  // Production runs in three tiers, each in its own district of the park:
+  //   tier 1 · refining: raw ore, logs and feedstock → steel, copper cathodes, aluminium ingots, glass, lumber, resin
+  //   tier 2 · components: refined stock → wire, motors, circuit boards, body panels, housings, furniture frames
+  //   tier 3 · final assembly: components → finished goods, belted straight into a paired distribution centre
+  // Anything with an `out` is shipped on by in-park transfer to the plants that use it.
   S.PLANTS = {
-    'Steel Mill': { in: ['iron', 'coal'], out: 'steel', proc: 'blast', colors: [0xb8c2dc] },
-    'Copper Refinery': { in: ['ore'], out: 'wire', proc: 'refinery', colors: [0xc87533] },
-    'Chemical Plant': { in: ['chem', 'lpg'], out: 'resin', proc: 'chem', colors: [0xf6f7fd] },
-    Sawmill: { in: ['timber'], out: 'lumber', proc: 'saw', colors: [0xdcb47e] },
-    'Glass Works': { in: ['sand', 'lpg'], out: 'glass', proc: 'glassworks', colors: [0xbfe3f2] },
-    'Aluminium Smelter': { in: ['bauxite'], out: 'alum', proc: 'potline', colors: [0xd9dde8] },
-    Electronics: { in: ['comp', 'wire', 'resin'], proc: 'press', colors: [0x7c9cff, 0xd9ad74, 0xcf9d62] },
-    Appliances: { in: ['steel', 'resin'], proc: 'press', colors: [0xf6f7fd, 0xcf9d62, 0xd9ad74] },
-    'Auto Parts': { in: ['steel', 'alum'], proc: 'smelter', colors: [0xa3acc9, 0xcf9d62, 0xc4925a] },
-    Beverages: { in: ['glass', 'syrup', 'grain'], proc: 'tanks', colors: [0x5cc8ff, 0x3a6ff7, 0xd9ad74] },
-    Furniture: { in: ['lumber', 'fabric'], proc: 'sawmill', colors: [0xb98b55, 0xcf9d62, 0xdcb47e] },
-    Pharma: { in: ['chem', 'comp'], proc: 'tanks', colors: [0x6fdc8c, 0xf6f7fd, 0xd9ad74] },
+    'Steel Mill': { tier: 1, in: ['iron', 'coal'], out: 'steel', proc: 'blast', colors: [0xb8c2dc] },
+    'Copper Refinery': { tier: 1, in: ['ore'], out: 'copper', proc: 'refinery', colors: [0xc87533] },
+    'Aluminium Smelter': { tier: 1, in: ['bauxite'], out: 'alum', proc: 'potline', colors: [0xd9dde8] },
+    'Chemical Plant': { tier: 1, in: ['chem', 'lpg'], out: 'resin', proc: 'chem', colors: [0xf6f7fd] },
+    Sawmill: { tier: 1, in: ['timber'], out: 'lumber', proc: 'saw', colors: [0xdcb47e] },
+    'Glass Works': { tier: 1, in: ['sand', 'lpg'], out: 'glass', proc: 'glassworks', colors: [0xbfe3f2] },
+    'Wire Mill': { tier: 2, in: ['copper'], out: 'wire', proc: 'refinery', colors: [0xc87533] },
+    'Motor Works': { tier: 2, in: ['steel', 'wire'], out: 'motors', proc: 'smelter', colors: [0x4a5578] },
+    'Circuit Fab': { tier: 2, in: ['copper', 'resin', 'comp'], out: 'boards', proc: 'press', colors: [0x37b26c] },
+    'Panel Press': { tier: 2, in: ['steel', 'alum'], out: 'panels', proc: 'press', colors: [0xd9dde8] },
+    'Moulding Shop': { tier: 2, in: ['resin'], out: 'housings', proc: 'press', colors: [0xf6f7fd] },
+    'Frame Shop': { tier: 2, in: ['lumber', 'steel'], out: 'frames', proc: 'sawmill', colors: [0xb98b55] },
+    Electronics: { tier: 3, in: ['boards', 'housings', 'glass'], proc: 'press', colors: [0x7c9cff, 0xd9ad74, 0xcf9d62] },
+    Appliances: { tier: 3, in: ['motors', 'panels', 'housings'], proc: 'press', colors: [0xf6f7fd, 0xcf9d62, 0xd9ad74] },
+    'Auto Parts': { tier: 3, in: ['motors', 'panels', 'boards'], proc: 'smelter', colors: [0xa3acc9, 0xcf9d62, 0xc4925a] },
+    Beverages: { tier: 3, in: ['glass', 'syrup', 'grain'], proc: 'tanks', colors: [0x5cc8ff, 0x3a6ff7, 0xd9ad74] },
+    Furniture: { tier: 3, in: ['frames', 'fabric'], proc: 'sawmill', colors: [0xb98b55, 0xcf9d62, 0xdcb47e] },
+    Pharma: { tier: 3, in: ['chem', 'comp'], proc: 'tanks', colors: [0x6fdc8c, 0xf6f7fd, 0xd9ad74] },
+    'E-Bikes': { tier: 3, in: ['motors', 'alum', 'boards'], proc: 'press', colors: [0x2aa198, 0xcf9d62, 0xd9ad74] },
+    'Solar Panels': { tier: 3, in: ['glass', 'alum', 'boards'], proc: 'press', colors: [0x2140b8, 0xd9ad74, 0xcf9d62] },
+    Machinery: { tier: 3, in: ['motors', 'steel', 'boards'], proc: 'smelter', colors: [0xf0b429, 0xcf9d62, 0xc4925a] },
   };
-  S.ASSEMBLY = ['Electronics', 'Appliances', 'Auto Parts', 'Beverages', 'Furniture', 'Pharma'];
-  S.INTERMEDIATE = ['Steel Mill', 'Copper Refinery', 'Chemical Plant', 'Sawmill', 'Glass Works', 'Aluminium Smelter'];
+  const tierOf = (t) => Object.keys(S.PLANTS).filter((n) => S.PLANTS[n].tier === t);
+  S.TIER_NAME = { 1: 'Refining', 2: 'Components', 3: 'Final assembly' };
+  S.ASSEMBLY = tierOf(3);
+  S.REFINING = tierOf(1);
+  S.COMPONENTS = tierOf(2);
+  // every plant that ships its output on to other plants, components first, so the planner fills the deepest gap first
+  S.INTERMEDIATE = [...S.COMPONENTS, ...S.REFINING];
   S.RECIPES = S.PLANTS;
   S.LINES = [
     { name: 'Bluewave', color: 0x2f56e0 }, { name: 'Coral Line', color: 0xe2703a }, { name: 'Northstar', color: 0x2aa198 },
@@ -133,8 +159,9 @@
     if (!mode) return null;
     const po = { id: 'PO-' + poSeq++, mat: m, qty: S.MAT[m].size, to: f, mode, status: 'Placed', events: [], placed: WT.sim.minutes, unit: null, vehicle: null };
     S.orders.unshift(po);
-    if (S.orders.length > 160) {
-      const i = S.orders.findIndex((o, k) => k > 120 && !open(o));
+    // keep a few hundred: three tiers of plants hold many orders open at once, and delivered ones must not all drop off
+    if (S.orders.length > 320) {
+      const i = S.orders.findIndex((o, k) => k > 240 && !open(o));
       if (i >= 0) S.orders.splice(i, 1);
     }
     if (mode === 'pipe') { S.ev(po, 'Nominated · pipeline batch from the gas field'); S.pipeQ.push(po); }

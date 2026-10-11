@@ -12,9 +12,12 @@
   const DOCKS = [36, 20, 4, -12];
   // a docked mover's rear bumper stops at REAR_X, 2 m short of the wall; its origin sits 7.8 m ahead of the bumper
   const WALL_X = 66, LANE_X = 43, REAR_X = 64, DOCK_X = REAR_X - 7.8, BELT_X = 64.6, PULL = 13;
-  const PREFIX = { 'Steel Mill': 'STL', 'Copper Refinery': 'CU', 'Chemical Plant': 'CHM', Sawmill: 'SAW', 'Glass Works': 'GLS', 'Aluminium Smelter': 'ALU' };
+  const PREFIX = { 'Steel Mill': 'STL', 'Copper Refinery': 'CU', 'Chemical Plant': 'CHM', Sawmill: 'SAW', 'Glass Works': 'GLS', 'Aluminium Smelter': 'ALU',
+    'Wire Mill': 'WIR', 'Motor Works': 'MOT', 'Circuit Fab': 'PCB', 'Panel Press': 'PNL', 'Moulding Shop': 'MLD', 'Frame Shop': 'FRM' };
   const ACCENT = { Electronics: 0x2f56e0, Appliances: 0x1aa6b7, 'Auto Parts': 0x6a7194, Beverages: 0x3a6ff7, Furniture: 0xb5543d, Pharma: 0x37b26c,
-    'Steel Mill': 0x4a5578, 'Copper Refinery': 0xc87533, 'Chemical Plant': 0x37b26c, Sawmill: 0x9c7a5b, 'Glass Works': 0x1aa6b7, 'Aluminium Smelter': 0x9aa1c4 };
+    'Steel Mill': 0x4a5578, 'Copper Refinery': 0xc87533, 'Chemical Plant': 0x37b26c, Sawmill: 0x9c7a5b, 'Glass Works': 0x1aa6b7, 'Aluminium Smelter': 0x9aa1c4,
+    'Wire Mill': 0xb86a2c, 'Motor Works': 0x3a4166, 'Circuit Fab': 0x2f8f57, 'Panel Press': 0x6a7194, 'Moulding Shop': 0x2f56e0, 'Frame Shop': 0xa0754e,
+    'E-Bikes': 0x2aa198, 'Solar Panels': 0x2140b8, Machinery: 0xf0b429 };
   const WALLS = [['#e9ecf7', '#d3d8ec'], ['#dfe6f2', '#c7d0e6'], ['#f1ede6', '#ddd6ca']];
   const IN_POS = [[13, 31], [28, 31], [13, 13]];
   const PROC_NAME = { smelter: 'Foundry + assembly', press: 'Moulding + assembly', tanks: 'Mixing + bottling', sawmill: 'Woodshop + upholstery',
@@ -29,6 +32,7 @@
       this.lineName = name;
       this.recipe = S.PLANTS[name];
       this.intermediate = !!this.recipe.out;
+      this.tier = this.recipe.tier;
       this.partner = this.intermediate ? null : partner || null;
       this.line = { name, colors: this.recipe.colors };
       this.name = this.intermediate ? name : name + ' Plant';
@@ -207,7 +211,9 @@
     }
     *run() {
       let tIn = 0, tMid = 0, tOut = 0, tCycle = 0;
-      const need = this.intermediate ? 0.4 : 0.12;
+      // refining runs fastest; a component plant draws at a rate two refineries' worth of stock can keep up with, and
+      // final assembly at a rate one component plant feeds two lines
+      const need = { 1: 0.4, 2: 0.22, 3: 0.1 }[this.tier] || 0.12;
       while (true) {
         const dt = WT.sim.dt;
         tIn += dt; tMid += dt; tOut += dt; tCycle += dt;
@@ -399,7 +405,7 @@
       const consumers = this.intermediate ? S.plants().filter((p) => p.recipe.in.includes(this.recipe.out)).map((p) => p.id) : [];
       const status = !this.active ? 'Under construction' : this.starved ? 'Starved' : this.blocked ? 'Output full' : 'Running';
       return this.cardBase({
-        kicker: 'Facility · ' + (this.intermediate ? 'Primary processing' : 'Assembly plant'), icon: this.intermediate ? '⚙️' : '🏭',
+        kicker: `Facility · Tier ${this.tier} · ${S.TIER_NAME[this.tier]}`, icon: this.tier === 1 ? '🔥' : this.tier === 2 ? '⚙️' : '🏭',
         sub: `${this.recipe.in.map((m) => S.MAT[m].name).join(' + ')} → ${this.intermediate ? S.MAT[this.recipe.out].name : this.lineName}`,
         status, statusTone: status === 'Running' ? 'green' : 'amber',
         where: this.starved ? 'Waiting on ' + S.MAT[this.starved].name : this.intermediate ? (consumers.length ? 'Supplies ' + consumers.slice(0, 3).join(', ') : 'No customers yet') : this.partner ? 'Feeds ' + this.partner.id : 'Standalone',

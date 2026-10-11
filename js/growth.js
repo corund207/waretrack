@@ -15,18 +15,21 @@
     Airfield: 1.4e6, 'Air terminal': 1.0e6, Stand: 500e3, Tower: 300e3, Headquarters: 900e3, 'Solar farm': 300e3, 'Tank farm': 450e3, Parking: 200e3,
     'Container depot': 650e3, 'Truck stop': 350e3, Substation: 280e3, 'Water tower': 220e3,
     'Steel Mill': 600e3, 'Copper Refinery': 520e3, 'Chemical Plant': 560e3, Sawmill: 340e3, 'Glass Works': 450e3, 'Aluminium Smelter': 580e3,
+    'Wire Mill': 380e3, 'Motor Works': 470e3, 'Circuit Fab': 520e3, 'Panel Press': 440e3, 'Moulding Shop': 360e3, 'Frame Shop': 320e3,
     'Iron mine': 380e3, 'Coal mine': 360e3, 'Bauxite mine': 380e3, 'Sand quarry': 300e3, 'Grain farm': 280e3,
     'Container factory': 460e3, 'Gas field': 550e3, 'Off-site empty yard': 420e3, 'Mover depot': 520e3 };
   const DUR = { Warehouse: 26, Factory: 32, 'Rail line': 30, 'Rail terminal': 28, 'Power plant': 34, 'Port terminal': 34, Airfield: 26,
     'Air terminal': 30, Stand: 14, Tower: 18, Headquarters: 40, 'Solar farm': 16, 'Tank farm': 22, Parking: 12,
     'Container depot': 24, 'Truck stop': 18, Substation: 16, 'Water tower': 20,
     'Steel Mill': 38, 'Copper Refinery': 32, 'Chemical Plant': 34, Sawmill: 24, 'Glass Works': 30, 'Aluminium Smelter': 40,
+    'Wire Mill': 26, 'Motor Works': 30, 'Circuit Fab': 32, 'Panel Press': 28, 'Moulding Shop': 24, 'Frame Shop': 22,
     'Iron mine': 24, 'Coal mine': 24, 'Bauxite mine': 24, 'Sand quarry': 20, 'Grain farm': 20,
     'Container factory': 26, 'Gas field': 28, 'Off-site empty yard': 24, 'Mover depot': 22 };
   const ICON = { Warehouse: '🏬', Factory: '🏭', 'Rail line': '🛤️', 'Rail terminal': '🚉', 'Power plant': '⚡', 'Port terminal': '⚓', Airfield: '🛬',
     'Air terminal': '🛫', Stand: '🛩️', Tower: '📡', Headquarters: '🏢', 'Solar farm': '☀️', 'Tank farm': '🛢️', Parking: '🅿️',
     'Container depot': '🧱', 'Truck stop': '⛽', Substation: '🔌', 'Water tower': '💧',
-    'Steel Mill': '🔩', 'Copper Refinery': '🧵', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙', 'Aluminium Smelter': '🪨',
+    'Steel Mill': '🔩', 'Copper Refinery': '🟫', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙', 'Aluminium Smelter': '🪨',
+    'Wire Mill': '🧵', 'Motor Works': '⚙️', 'Circuit Fab': '💾', 'Panel Press': '🛠️', 'Moulding Shop': '🧴', 'Frame Shop': '🪚',
     'Iron mine': '⛏️', 'Coal mine': '⛏️', 'Bauxite mine': '⛏️', 'Sand quarry': '⛏️', 'Grain farm': '🌾',
     'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖' };
   G.ICON = ICON;
@@ -36,20 +39,28 @@
   const usedOn = (A) => W.plots.filter((p) => p.A === A && p.used).length;
   const has = (type, pred = () => true) => WT.facilities.some((f) => f.type === type && pred(f));
   const count = (type) => WT.facilities.filter((f) => f.type === type).length;
-  function freePair() {
-    for (const A of W.AVENUES) for (let k = 0; k < W.PLOT_K - 1; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
+  function freePair(avenues = W.AVENUES) {
+    for (const A of avenues) for (let k = 0; k < W.PLOT_K - 1; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
       const a = W.plotAt(A, s, h, k), b = W.plotAt(A, s, h, k + 1);
       if (a && b && !a.used && !b.used) return [a, b];
     }
     return null;
   }
-  function freePlot() {
-    for (const A of W.AVENUES) for (let k = 0; k < W.PLOT_K; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
+  function freePlot(avenues = W.AVENUES) {
+    for (const A of avenues) for (let k = 0; k < W.PLOT_K; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
       const p = W.plotAt(A, s, h, k);
       if (p && !p.used) return p;
     }
     return null;
   }
+  // Industrial districts: refineries cluster on the west avenues by the ore trains, component plants on the east
+  // side, final assembly with its distribution centres in the middle. A full district spills onto any free plot.
+  const DISTRICT = { 1: [-360, -600], 2: [360, 600], 3: [-120, 120] };
+  G.DISTRICT = DISTRICT;
+  const plotForTier = (tier) => freePlot(DISTRICT[tier]) || freePlot();
+  // how many plants (any tier) use material m, and how many plants make it
+  const usersOf = (m) => WT.facilities.filter((f) => f.type === 'Factory' && f.recipe.in.includes(m)).length;
+  const makersOf = (name) => WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === name).length;
   // mover depots spread over the avenues (fewest depots first, nearest the park centre), so no one avenue carries the
   // whole fleet home
   function depotPlot() {
@@ -77,15 +88,16 @@
       // the mover fleet must be in place before the first terminal: every container leaves it on a mover
       () => project('Mover depot', () => new WT.MoverDepot(plots(A0, 1, 1, 1))),
       () => project('Rail terminal', () => new WT.RailTerminal(A0)),
-      () => project('Steel Mill', () => new WT.Factory(plots(A0, 1, -1, 2), null, 'Steel Mill')),
+      () => project('Steel Mill', () => new WT.Factory(plots(-360, 1, -1, 0), null, 'Steel Mill')),
       () => project('Container depot', () => new WT.Depot(plots(A0, -1, 1, 0))),
       () => project('Power plant', () => new WT.PowerPlant(plots(A0, 1, 1, 0))),
       () => project('Warehouse', () => new WT.Warehouse(plots(120, 1, -1, 0), 'fulfil')),
       () => project('Factory', () => new WT.Factory(plots(120, 1, -1, 1), find('WH-03'), 'Electronics')),
       () => project('Truck stop', () => new WT.TruckStop(plots(120, -1, 1, 0))),
       () => project('Port terminal', () => new WT.Port(A0)),
-      () => project('Chemical Plant', () => new WT.Factory(plots(A0, -1, -1, 2), null, 'Chemical Plant')),
-      () => project('Copper Refinery', () => new WT.Factory(plots(120, 1, -1, 2), null, 'Copper Refinery')),
+      () => project('Chemical Plant', () => new WT.Factory(plots(-360, -1, -1, 0), null, 'Chemical Plant')),
+      () => project('Copper Refinery', () => new WT.Factory(plots(-360, 1, -1, 1), null, 'Copper Refinery')),
+      () => project('Motor Works', () => new WT.Factory(plots(360, -1, -1, 0), null, 'Motor Works')),
       () => project('Airfield', () => new WT.Airfield()),
       () => project('Air terminal', () => new WT.AirTerminal()),
       () => project('Stand', () => new WT.Stand(1)),
@@ -124,14 +136,13 @@
       const p = depotPlot();
       if (p) { p.used = 'planned'; WT.SUP.needMoverDepot = false; queue.push(project('Mover depot', () => new WT.MoverDepot(p), { plot: p })); return queue[0]; }
     }
-    // upstream industry: build a primary plant once enough assembly lines depend on its output
+    // upstream industry, tier by tier: a component plant once enough assembly lines use its part, a refinery once
+    // enough component plants (or lines) use its stock, each in its own district
     for (const name of WT.SUP.INTERMEDIATE) {
-      const out = WT.SUP.PLANTS[name].out;
-      const consumers = WT.facilities.filter((f) => f.type === 'Factory' && !f.intermediate && f.recipe.in.includes(out)).length;
-      const producers = WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === name).length;
-      if (consumers && consumers > producers * 2) {
-        const p = freePlot();
-        if (p) { p.used = 'planned'; queue.push(project(name, () => new WT.Factory(p, null, name), { plot: p })); return queue[0]; }
+      const r = WT.SUP.PLANTS[name], users = usersOf(r.out), makers = makersOf(name);
+      if (users && users > makers * 2) {
+        const p = plotForTier(r.tier);
+        if (p) { p.used = 'planned'; queue.push(project(name, () => new WT.Factory(p, null, name), { plot: p, label: name })); return queue[0]; }
       }
     }
     G.fillTick = (G.fillTick || 0) + 1;
@@ -149,7 +160,7 @@
         return queue[0];
       }
     }
-    const pair = freePair();
+    const pair = freePair(DISTRICT[3]) || freePair();
     if (pair) {
       pair[0].used = pair[1].used = 'planned';
       let wh = null;
@@ -157,15 +168,14 @@
       const lines = WT.SUP.ASSEMBLY.slice().sort((x, y) => count2(x) - count2(y) + (Math.random() - 0.5));
       const line = lines[0];
       queue.push(project('Factory', () => new WT.Factory(pair[1], wh, line), { label: line + ' Plant' }));
-      // industrial cluster: every other new assembly line also brings a supplier plant for its scarcest input
+      // supply chain: every other new assembly line also brings the component plant for its scarcest part
       if (Math.random() < 0.5) {
-        const need = WT.SUP.INTERMEDIATE.map((name) => {
+        const need = WT.SUP.COMPONENTS.map((name) => {
           const out = WT.SUP.PLANTS[name].out;
-          const users = WT.facilities.filter((f) => f.type === 'Factory' && !f.intermediate && f.recipe.in.includes(out)).length + (WT.SUP.PLANTS[line].in.includes(out) ? 1 : 0);
-          return { name, gap: users - count2(name) * 2 };
+          return { name, gap: usersOf(out) + (WT.SUP.PLANTS[line].in.includes(out) ? 1 : 0) - makersOf(name) * 2 };
         }).sort((a, b) => b.gap - a.gap)[0];
-        const p = need && need.gap > 0 && freePlot();
-        if (p) { p.used = 'planned'; queue.push(project(need.name, () => new WT.Factory(p, null, need.name), { plot: p })); }
+        const p = need && need.gap > 0 && plotForTier(2);
+        if (p) { p.used = 'planned'; queue.push(project(need.name, () => new WT.Factory(p, null, need.name), { plot: p, label: need.name })); }
       }
       return queue[0];
     }
