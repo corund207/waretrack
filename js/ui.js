@@ -50,7 +50,16 @@
     const phone = Math.min(w, h) <= 520 || w <= 760;
     document.body.classList.toggle('phone', phone);
     document.body.classList.toggle('land', phone && w > h);
+    // iOS home-screen app with a translucent status bar: the page comes up one status bar short, leaving an empty strip
+    // along the bottom. Stretch the scene into it and pull the bottom sheets down to the real bottom edge.
+    let gap = 0;
+    if (navigator.standalone) {
+      const full = w > h ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+      gap = Math.max(0, Math.min(80, Math.round(full - innerHeight)));
+    }
+    if (gap !== vgap) { vgap = gap; document.documentElement.style.setProperty('--vgap', gap + 'px'); window.dispatchEvent(new Event('resize')); }
   }
+  let vgap = 0;
   UI.fitScreen = fitScreen;
   fitScreen();
   window.addEventListener('resize', fitScreen);
@@ -110,6 +119,8 @@
       if (a === 'cinema') { UI.toggleCinemaMode(); return; }
       goTo(a);
     });
+    // phones: the stats strip folds the shortcut chips in and out
+    $('#kpis').addEventListener('click', () => { if (document.body.classList.contains('phone')) document.body.classList.toggle('hud'); });
     $('#cineBar').addEventListener('click', (e) => { if (e.target.closest('[data-act=exit]')) UI.toggleCinemaMode(false); });
 
     $('#sitePill').addEventListener('click', () => goTo('overview'));
@@ -150,7 +161,11 @@
     $('#docks').addEventListener('pointerdown', (e) => {
       if (e.target.closest('.grab')) { $('#docks').classList.toggle('full'); return; }
       const t = e.target.closest('[data-tab]');
-      if (t) { tab = t.dataset.tab; renderTabs(); return; }
+      if (t) {
+        // phones: the panel sits folded down to its tabs; a tab opens it, the open tab again folds it away
+        if (document.body.classList.contains('phone')) $('#docks').classList.toggle('full', t.dataset.tab !== tab || !$('#docks').classList.contains('full'));
+        tab = t.dataset.tab; renderTabs(); return;
+      }
       const r = e.target.closest('[data-uid]');
       if (r && WT.entities.has(r.dataset.uid)) WT.select(WT.entities.get(r.dataset.uid), true);
     });
