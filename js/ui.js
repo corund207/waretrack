@@ -40,6 +40,25 @@
   const MODE_ICON = { truck: 'truck', rail: 'train', air: 'plane', sea: 'ship' };
   const PHASE_ICON = ['warehouse', 'factory', 'train', 'ship', 'plane', 'sparkle'];
   let tab = 'projects';
+  let shownSel = null;
+
+  /* ---------- phones: layout follows the screen ---------- */
+  // body.phone below phone size (either way round), body.land when it is held sideways; re-checked on every resize,
+  // rotation and Safari toolbar change, so the layout adjusts by itself
+  function fitScreen() {
+    const vv = window.visualViewport, w = vv ? vv.width : innerWidth, h = vv ? vv.height : innerHeight;
+    const phone = Math.min(w, h) <= 520 || w <= 760;
+    document.body.classList.toggle('phone', phone);
+    document.body.classList.toggle('land', phone && w > h);
+  }
+  UI.fitScreen = fitScreen;
+  fitScreen();
+  window.addEventListener('resize', fitScreen);
+  window.addEventListener('orientationchange', () => setTimeout(() => { fitScreen(); window.dispatchEvent(new Event('resize')); }, 250));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fitScreen);
+  // Safari: no page zoom from pinching the dashboard (the map has its own pinch), no double-tap zoom
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
   let unread = 0;
 
   /* ---------- shell ---------- */
@@ -59,6 +78,7 @@
       <button data-act="s2" class="spd" title="2× speed (2)">2×</button>
       <button data-act="s4" class="spd" title="4× speed (3)">4×</button>
       <button data-act="s8" class="spd" title="8× speed (4)">8×</button>
+      <button data-act="cycle" class="spd-cycle" id="speedCycle" title="Speed"></button>
       <span class="sep"></span>
       <button data-act="theme" id="themeBtn"></button>`;
     $('#mapTools').addEventListener('click', (e) => {
@@ -72,6 +92,7 @@
       if (a === 'home') WT.home();
       if (a === 'pause') WT.setPaused(!WT.sim.paused);
       if (/^s\d$/.test(a)) WT.setSpeed(+a.slice(1));
+      if (a === 'cycle') WT.setSpeed({ 1: 2, 2: 4, 4: 8, 8: 1 }[WT.sim.speed] || 1); // phones: one button steps through the speeds
       if (a === 'theme') WT.Theme.toggle();
     });
     // the button shows the mode it switches to
@@ -113,6 +134,8 @@
     });
 
     $('#detail').addEventListener('pointerdown', (e) => {
+      // phones: the card is a sheet — tap its handle or header to pull it up or back down
+      if (e.target.closest('.grab') || (e.target.closest('.d-head') && !e.target.closest('[data-act]'))) { $('#detail').classList.toggle('full'); return; }
       const b = e.target.closest('[data-act]');
       if (!b || !WT.selected) return;
       WT.Cinema.userInput();
@@ -125,6 +148,7 @@
       if (b && WT.entities.has(b.dataset.uid)) WT.select(WT.entities.get(b.dataset.uid), true);
     });
     $('#docks').addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.grab')) { $('#docks').classList.toggle('full'); return; }
       const t = e.target.closest('[data-tab]');
       if (t) { tab = t.dataset.tab; renderTabs(); return; }
       const r = e.target.closest('[data-uid]');
@@ -185,6 +209,7 @@
     const s = WT.sim;
     $('#pauseBtn').innerHTML = ic(s.paused ? 'play' : 'pause');
     $('#pauseBtn').classList.toggle('on', s.paused);
+    $('#speedCycle').textContent = s.speed + '×';
     document.querySelectorAll('#mapTools .spd').forEach((b) => b.classList.toggle('on', !s.paused && b.dataset.act === 's' + s.speed));
     document.body.classList.toggle('paused', s.paused);
   }
@@ -222,9 +247,11 @@
   function renderDetail() {
     const e = WT.selected, el = $('#detail');
     document.body.classList.toggle('has-detail', !!e);
+    if (e !== shownSel) { shownSel = e; el.classList.remove('full'); } // a new pick opens as a short sheet
     if (!e) { setHTML(el, ''); return; }
     const c = e.card();
     setHTML(el, `
+      <div class="grab"></div>
       <div class="d-head">
         <div class="d-icon" style="--c:${c.iconBg}">${c.icon}</div>
         <div class="d-titles"><div class="d-kicker">${esc(c.kicker)}</div><div class="d-title">${esc(c.title)}</div><div class="d-sub">${esc(c.sub)}</div></div>
@@ -336,7 +363,7 @@
       for (const ev of WT.events.slice(0, 20)) rows += `<div class="ev"><span class="ev-dot ${ev.tone}"></span><span class="ev-msg">${esc(ev.msg)}</span><small>${WT.fmtTime(ev.t)}</small></div>`;
     }
     if (!rows) rows = '<div class="empty">Nothing here yet — the park is just getting started</div>';
-    setHTML('#docks', `<div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div><div class="rows">${rows}</div>`);
+    setHTML('#docks', `<div class="grab"></div><div class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div><div class="rows">${rows}</div>`);
   }
 
   /* ---------- search ---------- */

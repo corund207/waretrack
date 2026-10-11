@@ -4,7 +4,9 @@
   const canvas = document.getElementById('scene');
   const renderer = new T.WebGLRenderer({ canvas, antialias: true });
   WT.renderer = renderer;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // phones: a touch screen no wider than a phone gets a lighter render (pixel ratio, shadow map) to keep it smooth
+  const PHONE = (WT.PHONE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) <= 600));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PHONE ? 1.6 : 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false;
@@ -19,7 +21,7 @@
   const sun = new T.DirectionalLight(0xfff1dc, 2.6);
   WT.lights = { hemi, sun }; // theme.js retunes these for night
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(PHONE ? 2048 : 4096, PHONE ? 2048 : 4096);
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.04;
   sun.shadow.camera.near = 1;
@@ -143,7 +145,8 @@
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
-      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), size: goal.size };
+      // two fingers, as in a maps app: pinch to zoom, twist to rotate, slide up/down together to tilt
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), my: (a.y + b.y) / 2, size: goal.size, yaw: view.yaw, pitch: view.pitch };
       drag = null;
     } else drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, rotate: e.button === 2 };
   });
@@ -154,6 +157,8 @@
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       goal.size = view.size = WT.clamp((pinch.size * pinch.d) / Math.max(10, d), 22, 1600);
+      goal.yaw = view.yaw = pinch.yaw - WT.angDiff(pinch.ang, Math.atan2(b.y - a.y, b.x - a.x));
+      goal.pitch = view.pitch = WT.clamp(pinch.pitch + ((a.y + b.y) / 2 - pinch.my) * 0.005, PITCH_MIN, PITCH_MAX);
       return;
     }
     if (drag) {

@@ -17,13 +17,14 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
-  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased; }
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
 .ic { width: 16px; height: 16px; flex: none; }
 .ic.muted { color: var(--faint); }
 .ic.blue { color: var(--blue); }
 .muted { color: var(--faint); }
-#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 .card { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); }
 
 /* ---------- top bar ---------- */
@@ -221,29 +222,6 @@ body.has-detail .detail { display: block; animation: pop 0.18s ease-out; }
   .docks { width: calc(100vw - 28px); }
   .kpi { min-width: 0; }
 }
-@media (max-width: 760px) {
-  .topbar { gap: 8px; padding: 0 10px; }
-  .brand span, .search kbd, .site-txt, .pill-sep, .site-pill .ic, .live-pill, .user { display: none; }
-  .site-pill { padding: 0 6px; }
-  .mode-chips button { white-space: nowrap; flex: none; }
-  .map-tools button { width: 30px; height: 30px; }
-  .brand { min-width: 0; }
-  .search { flex: 1; max-width: none; width: auto; }
-  .spacer { display: none; }
-  .kpis { left: 10px; right: 10px; overflow-x: auto; scrollbar-width: none; }
-  .kpi { padding: 8px 10px; }
-  .kpi-ic { display: none; }
-  .kpi-val { font-size: 17px; }
-  .mode-chips { top: 128px; left: 10px; right: 10px; overflow-x: auto; scrollbar-width: none; }
-  .right-stack { top: 168px; right: 10px; }
-  .detail { position: fixed; left: 10px; right: 10px; bottom: 10px; width: auto; z-index: 15; max-height: 50vh; overflow: auto; }
-  .tracking { display: none; }
-  .docks { left: 10px; right: 10px; bottom: 10px; width: auto; }
-  body.has-detail .docks { display: none; }
-  .t-card { display: none; }
-  .menu, .notif { position: fixed; left: 10px; right: 10px; top: 60px; width: auto; }
-}
-
 /* ---------- v2: growth park ---------- */
 .tracking { width: 700px; }
 .mode-chips button.warm { background: #fff3dc; color: var(--amber); }
@@ -323,3 +301,74 @@ body.dark .build-label { background: rgba(26, 32, 54, 0.96); box-shadow: 0 8px 2
 body.dark .map-label.hov { background: rgba(230, 233, 245, 0.92); color: #141933; }
 body.dark .sb.out { outline-color: #3d4a80; }
 body.dark .hint { color: #6c7391; }
+
+/* ---------- phones (body.phone / body.land, set by js/ui.js from the screen size and orientation) ---------- */
+/* Safe areas: the notch / Dynamic Island, the rounded corners and the home bar (viewport-fit=cover in index.html). */
+.grab, .spd-cycle { display: none; }
+body.phone {
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+  --bar: 50px; --top: calc(var(--bar) + var(--sat)); --gx: 8px;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+body.phone button, body.phone .r.click, body.phone .t-card { touch-action: manipulation; }
+body.phone .topbar { height: var(--top); padding: var(--sat) calc(var(--gx) + var(--sar)) 0 calc(var(--gx) + var(--sal)); gap: 6px; }
+body.phone .brand { min-width: 0; flex: none; }
+body.phone .brand span, body.phone .search kbd, body.phone .site-txt, body.phone .pill-sep, body.phone .site-pill .ic,
+body.phone .user, body.phone .spacer, body.phone .hint, body.phone .tracking { display: none; }
+body.phone .search { flex: 1; min-width: 0; width: auto; max-width: none; height: 34px; }
+body.phone .search input { font-size: 16px; } /* iOS zooms into anything smaller when it is focused */
+body.phone .site-pill { height: 34px; padding: 0 5px; }
+body.phone .live-pill { flex: none; height: 26px; padding: 0 8px; font-size: 0; gap: 5px; } /* just the dot and the clock */
+body.phone .live-pill #clock { font-size: 11px; }
+body.phone .site-wrap, body.phone .bell-wrap { flex: none; }
+body.phone .icon-btn { width: 34px; height: 34px; }
+body.phone .menu, body.phone .notif { position: fixed; top: calc(var(--top) + 6px); left: calc(var(--gx) + var(--sal)); right: calc(var(--gx) + var(--sar)); width: auto; max-height: 60vh; }
+/* KPIs: four compact tiles in a row */
+body.phone .kpis { top: calc(var(--top) + 6px); left: calc(var(--gx) + var(--sal)); right: calc(var(--gx) + var(--sar)); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+body.phone .kpi { min-width: 0; padding: 6px 8px; gap: 0; border-radius: 11px; }
+body.phone .kpi-ic, body.phone .kpi-sub, body.phone .kpi .delta { display: none; }
+body.phone .kpi-label { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.phone .kpi-val { font-size: 14px; letter-spacing: -0.3px; white-space: nowrap; }
+body.phone .mode-chips { top: calc(var(--top) + 54px); left: calc(var(--gx) + var(--sal)); right: calc(var(--gx) + var(--sar)); overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+body.phone .mode-chips::-webkit-scrollbar { display: none; }
+body.phone .mode-chips button { flex: none; height: 28px; padding: 0 10px; white-space: nowrap; font-size: 11px; }
+/* map tools: zoom, home, play/pause, one speed button that steps 1× → 2× → 4× → 8×, theme (rotate and tilt are two-finger gestures) */
+body.phone .right-stack { top: calc(var(--top) + 92px); right: calc(var(--gx) + var(--sar)); }
+body.phone .map-tools button { width: 36px; height: 36px; }
+body.phone .map-tools [data-act=rotr], body.phone .map-tools [data-act=rotl], body.phone .map-tools .spd { display: none; }
+body.phone .map-tools .spd-cycle { display: grid; font-size: 12px; }
+/* bottom sheets: a grab handle; tap it (or a card's header) to pull the sheet up, again to drop it back */
+body.phone .grab { display: block; width: 100%; height: 18px; margin: -4px 0 2px; cursor: pointer; position: relative; }
+body.phone .grab::before { content: ""; position: absolute; left: 50%; top: 6px; width: 38px; height: 5px; border-radius: 3px; background: var(--line); transform: translateX(-50%); }
+body.phone .docks { left: calc(var(--gx) + var(--sal)); right: calc(var(--gx) + var(--sar)); bottom: calc(var(--gx) + var(--sab)); width: auto; padding-top: 6px; }
+body.phone .docks .rows { max-height: 128px; -webkit-overflow-scrolling: touch; }
+body.phone .docks.full .rows { max-height: 52vh; }
+body.phone .r { grid-template-columns: 56px 1fr auto 36px; padding: 9px 4px; }
+body.phone .detail { position: fixed; left: calc(var(--gx) + var(--sal)); right: calc(var(--gx) + var(--sar)); bottom: calc(var(--gx) + var(--sab)); width: auto;
+  z-index: 15; padding: 6px 14px 12px; max-height: calc(100% - var(--top) - 110px); overflow: auto; -webkit-overflow-scrolling: touch; }
+body.phone .detail:not(.full) .d-bars, body.phone .detail:not(.full) .d-rows { display: none; } /* short sheet: who, status, actions */
+body.phone .d-actions button { height: 38px; }
+body.phone.has-detail .docks { display: none; }
+body.phone .toasts { top: calc(var(--top) + 96px); max-width: calc(100% - 100px); }
+body.phone .toast { white-space: normal; font-size: 11.5px; }
+body.phone .cine-bar { bottom: calc(14px + var(--sab)); }
+body.phone.cinema .toasts { top: calc(var(--sat) + 12px); }
+/* held sideways: a slimmer top bar, stats and chips top-left, tools along the bottom-left, the lists and cards as a
+   panel down the right-hand side (clear of the notch on whichever side it is) */
+body.phone.land { --bar: 44px; }
+body.phone.land .kpis { right: auto; width: min(460px, 54vw); }
+body.phone.land .mode-chips { top: calc(var(--top) + 50px); right: auto; width: min(460px, 54vw); }
+body.phone.land .right-stack { top: auto; right: auto; left: calc(var(--gx) + var(--sal)); bottom: calc(var(--gx) + var(--sab)); }
+body.phone.land .map-tools { flex-direction: row; }
+body.phone.land .map-tools .sep { width: 1px; height: auto; margin: 6px 3px; }
+body.phone.land .docks, body.phone.land .detail { left: auto; right: calc(var(--gx) + var(--sar)); top: calc(var(--top) + 6px); bottom: calc(var(--gx) + var(--sab));
+  width: min(360px, 40vw); max-height: none; display: flex; flex-direction: column; }
+body.phone.land .detail { display: none; overflow: auto; }
+body.phone.land.has-detail .docks { display: none; }
+body.phone.land.has-detail .detail { display: block; }
+body.phone.land .docks .rows, body.phone.land .docks.full .rows { flex: 1; max-height: none; }
+body.phone.land .grab { display: none; }
+body.phone.land .detail:not(.full) .d-bars, body.phone.land .detail:not(.full) .d-rows { display: block; }
+body.phone.land .detail:not(.full) .d-bars { display: flex; }
+body.phone.land .toasts { top: calc(var(--top) + 8px); left: calc(50% - 100px); }
