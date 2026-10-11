@@ -198,7 +198,7 @@
   edge('yard-in', sbEnd.id, 'yD', [[SX - 3, sbEnd.t], [SX - 3, 520], [-1316, 520], [-1316, 562], [-1280, 562]]);
   const YARD = [0, 1, 2, 3].map((k) => {
     const z = 562 - 7 * k;
-    return edge('yard-' + (k + 1), 'yD', 'yM', k ? [[-1280, 562], [-1262, z], [-1138, z], [-1120, 562]] : [[-1280, 562], [-1120, 562]], { siding: k + 1 });
+    return edge('yard-' + (k + 1), 'yD', 'yM', k ? [[-1280, 562], [-1258, 562], [-1240, z], [-1160, z], [-1142, 562], [-1120, 562]] : [[-1280, 562], [-1120, 562]], { siding: k + 1 });
   });
   on('NB', 496, 'yOut');
   edge('yard-out', 'yM', 'yOut', [[-1120, 562], [-1082, 562], [-1082, 520], [SX + 3, 520], [SX + 3, 496]]);
@@ -347,15 +347,19 @@
       W.dashLine(line, Math.min(xi, pod.A + sIn * 10), z, Math.max(xi, pod.A + sIn * 10), z, 94, 0, 0.6);
     }
     W.dashes(g, line, pod.color, 0.05);
-    const b = new M.MB(), shrub = (x, z, i) => b.blob(1.3, i % 3 ? 0x4f7d3a : 0x5c8a42, x, 1.1, z, 1.2, 0.85, 1.2, 1, 0.3, i + 1);
-    let i = 0;
+    // in short runs of their own, so each piece of hedge is only ever tested against what passes near it
+    let b = null, i = 0;
+    const shrub = (x, z, k) => {
+      if (k % 12 === 0) { if (b) g.add(b.mesh()); b = new M.MB(); }
+      b.blob(1.3, k % 3 ? 0x4f7d3a : 0x5c8a42, x, 1.1, z, 1.2, 0.85, 1.2, 1, 0.3, k + 1);
+    };
     for (let z = z0 + 3; z <= z1 - 3; z += 3.2) shrub(xo - sIn * 2.5, z, i++);
     for (const z of pod.ends) {
       const out = z === Math.max(z0, z1) ? 2.5 : -2.5;
       for (let x = pod.A - sIn * 14; Math.abs(x - pod.A) <= 120; x -= sIn * 3.2) shrub(x, z + out, i++);
       for (let x = pod.A + sIn * 14; Math.abs(x - pod.A) <= 100; x += sIn * 3.2) shrub(x, z + out, i++);
     }
-    g.add(b.mesh());
+    if (b) g.add(b.mesh());
   }
   R.build = function* () {
     R.building = true;
@@ -391,19 +395,24 @@
       total += e.len;
     }
     // a signal at every place a train may be held: a mast beside the track ahead of each conflict
-    const masts = new M.MB(), lamps = [];
-    for (const e of EDGES) for (const z of e.zones) {
-      if (z.a < 3 && !z.k.main) continue; // (the diverges: held where the line reaches them)
-      const s = Math.max(0, z.a - 2), p = e.path.at(s);
-      if (e.main && e.main(p)) continue;
-      const nx = -Math.sin(p.a), nz = Math.cos(p.a), x = p.x + nx * 2.6, zz = p.z + nz * 2.6, y = e.yAt(s);
-      masts.box(0.22, 4.2, 0.22, 0x4a5578, x, y, zz);
-      masts.box(0.5, 0.9, 0.5, 0x2b2f3d, x, y + 4.2, zz);
-      lamps.push({ x, y: y + 4.65, z: zz, k: z.k });
+    const lamps = [], mastMeshes = [];
+    for (const e of EDGES) {
+      const masts = new M.MB();
+      for (const z of e.zones) {
+        if (z.a < 3 && !z.k.main) continue; // (the diverges: held where the line reaches them)
+        const s = Math.max(0, z.a - 2), p = e.path.at(s);
+        if (e.main && e.main(p)) continue;
+        const nx = -Math.sin(p.a), nz = Math.cos(p.a), x = p.x + nx * 2.6, zz = p.z + nz * 2.6, y = e.yAt(s);
+        masts.box(0.22, 4.2, 0.22, 0x4a5578, x, y, zz);
+        masts.box(0.5, 0.9, 0.5, 0x2b2f3d, x, y + 4.2, zz);
+        lamps.push({ x, y: y + 4.65, z: zz, k: z.k });
+      }
+      if (!masts.p.length) continue;
+      const mm = masts.mesh();
+      mm.visible = false;
+      g.add(mm);
+      mastMeshes.push(mm);
     }
-    const mm = masts.mesh();
-    mm.visible = false;
-    g.add(mm);
     const lampGeo = new T.SphereGeometry(0.2, 8, 6), red = new T.MeshBasicMaterial({ color: 0xff3b30 }), green = new T.MeshBasicMaterial({ color: 0x34c759 });
     const lampMesh = new T.InstancedMesh(lampGeo, green, Math.max(1, lamps.length)), redMesh = new T.InstancedMesh(lampGeo, red, Math.max(1, lamps.length));
     lampMesh.count = redMesh.count = 0;
@@ -429,7 +438,8 @@
     });
     bm.count = ballast.length; sm.count = sleepers.length;
     runs.forEach((r) => (r.m.visible = true));
-    dm.visible = mm.visible = true;
+    dm.visible = true;
+    mastMeshes.forEach((m) => (m.visible = true));
     WT.scene.remove(layer);
     // signal aspects: red while another train holds the conflict beyond, green otherwise
     const mtx = new T.Matrix4();

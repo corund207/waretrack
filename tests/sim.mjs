@@ -251,7 +251,13 @@ function auditPaths() {
     bb.expandByScalar(12); bb.min.y = -1; bb.max.y = 20;
     return all.filter((t) => t.b.intersectsBox(bb)).map((t) => t.o);
   };
-  const treeHit = (x, z) => { for (const f of WT.W.forests) for (let i = 0; i < f.x.length; i++) if (f.alive[i] && Math.abs(f.x[i] - x) < 1.6 && Math.abs(f.z[i] - z) < 1.6) return true; return false; };
+  // standing trees on a 4 m grid, so each sample only looks at the trees around it
+  const trees = new Map(), cell = (x, z) => Math.floor(x / 4) + ',' + Math.floor(z / 4);
+  for (const f of WT.W.forests) for (let i = 0; i < f.x.length; i++) if (f.alive[i]) { const k = cell(f.x[i], f.z[i]); if (!trees.has(k)) trees.set(k, []); trees.get(k).push([f.x[i], f.z[i]]); }
+  const treeHit = (x, z) => {
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [tx, tz] of trees.get(cell(x + a * 4, z + b * 4)) || []) if (Math.abs(tx - x) < 1.6 && Math.abs(tz - z) < 1.6) return true;
+    return false;
+  };
   const ray = new T.Raycaster();
   ray.far = 14;
   const down = new T.Vector3(0, -1, 0), org = new T.Vector3();
