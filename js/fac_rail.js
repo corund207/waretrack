@@ -133,6 +133,8 @@
         const p = c.g.position, gap = (p.x - hx) * dir;
         if (Math.abs(p.z - hz) < 3 && gap > 0 && gap < 160) target = Math.min(target, Math.sqrt(2 * 2 * Math.max(0, gap - 30)));
       }
+      const sig = WT.RING.signalAhead(hx, dir); // a crossing of the main held for an industrial train
+      if (sig < 260) target = Math.min(target, Math.sqrt(2 * 2 * Math.max(0, sig - 30)));
       v += WT.clamp(target - v, -3 * dt, 2.2 * dt);
       tr.v = v;
       s += v * dt;
@@ -420,12 +422,12 @@
       const et = yard && open().find((t) => t.emptyCount() >= 3 && clearAt(t.A - 800) && t.A + 150 < R.divergeE[0]);
       if (et) { R.emptyTrain(et, yard); sent++; }
       const factory = R.containerFactory && R.containerFactory();
-      const site = factory && !factory.trainBusy && WT.facilities.find((f) => f.remote && f.active && !f.trainBusy && factory.available(f.mat) > 0 && S.backlog.rail.some((po) => po.mat === f.mat));
+      const site = factory && !factory.trainBusy && WT.facilities.find((f) => f.remote && f.active && !f.trainBusy && factory.available(f.mat) > 0 && S.backlog.rail.some((po) => po.mat === f.mat && !WT.RING.serves(po.to)));
       // mine trains join the main at the west merge, so they run to the yards east of it
       const terms = open().filter((t) => t.A - 150 > R.mergeW[1]);
       if (site && terms.length) {
         const term = terms.reduce((a, b) => (b.roomFor() > a.roomFor() ? b : a));
-        const manifest = S.takeManifest('rail', Math.min(10, factory.available(site.mat), term.roomFor() - 2), (po) => po.mat === site.mat);
+        const manifest = S.takeManifest('rail', Math.min(10, factory.available(site.mat), term.roomFor() - 2), (po) => po.mat === site.mat && !WT.RING.serves(po.to)); // (ore for the pods goes by ore train: js/ring.js)
         if (manifest.length) { R.mineTrain(site, term, manifest); sent++; }
       }
     }

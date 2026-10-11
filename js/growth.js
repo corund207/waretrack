@@ -31,7 +31,7 @@
     'Steel Mill': '🔩', 'Copper Refinery': '🟫', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙', 'Aluminium Smelter': '🪨',
     'Wire Mill': '🧵', 'Motor Works': '⚙️', 'Circuit Fab': '💾', 'Panel Press': '🛠️', 'Moulding Shop': '🧴', 'Frame Shop': '🪚',
     'Iron mine': '⛏️', 'Coal mine': '⛏️', 'Bauxite mine': '⛏️', 'Sand quarry': '⛏️', 'Grain farm': '🌾',
-    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖', 'Production ring': '🔄', 'Ring depot': '🚉' };
+    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖', 'Production ring': '🛤️', 'Ring depot': '🚉' };
   G.ICON = ICON;
   const costOf = (type) => Math.round((COST[type] * Math.pow(1.065, G.done)) / 1000) * 1000;
 
@@ -91,7 +91,7 @@
       () => project('Copper Refinery', () => new WT.Factory(ring.slotFor('Copper Refinery'), null, 'Copper Refinery')),
       () => project('Motor Works', () => new WT.Factory(ring.slotFor('Motor Works'), null, 'Motor Works')),
       // the rail hub and its branch lines, then a rail depot for each pod that has a plant
-      () => project('Production ring', null, { label: 'Rail hub + branch lines' }),
+      () => project('Production ring', null, { label: 'Industrial rail · trunk + station loops' }),
       () => project('Ring depot', () => new WT.RingDepot(ring.PODS[4]), { label: 'Pod E rail depot' }),
       () => project('Ring depot', () => new WT.RingDepot(ring.PODS[0]), { label: 'Pod A rail depot' }),
       () => project('Ring depot', () => new WT.RingDepot(ring.PODS[2]), { label: 'Pod C rail depot' }),
@@ -322,17 +322,17 @@
   }
 
   function* buildRing(p) {
-    p.stage = 'Laying the loop';
-    WT.log('🔄 Construction started: Production Ring loop line', 'amber', true);
+    p.stage = 'Laying track';
+    WT.log('🛤️ Construction started: industrial rail — trunk, spine and station loops', 'amber', true);
     WT.emit('event', { kind: 'rail-build', weight: 3, project: p });
     const t0 = WT.sim.minutes;
-    WT.spawn((function* () { while (p.stage !== 'Online') { p.progress = Math.min(0.99, (WT.sim.minutes - t0) / (28 * WT.sim.MIN_PER_SEC)); yield; } })());
+    WT.spawn((function* () { while (p.stage !== 'Online') { p.progress = Math.min(0.99, (WT.sim.minutes - t0) / (40 * WT.sim.MIN_PER_SEC)); yield; } })());
     yield* ring.build();
     p.stage = 'Online';
     p.progress = 1;
     G.done++;
     G.built.push({ id: 'RING', type: 'Production ring', t: WT.sim.minutes });
-    WT.log('🔄 Production Ring open: pod depots join as they are built', 'green', true);
+    WT.log('🛤️ Industrial rail open: each pod depot gets its station loop as it is built', 'green', true);
     WT.RING.startShuttles();
   }
 

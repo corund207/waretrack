@@ -189,7 +189,7 @@
       return;
     }
     if (a === 'ring') {
-      if (!WT.RING.built && !WT.facilities.some((x) => x.pod)) { showToast({ msg: 'Production Ring not built yet — keep watching!', tone: 'amber' }); return; }
+      if (!WT.RING.built && !WT.facilities.some((x) => x.pod)) { showToast({ msg: 'Industrial rail not built yet — keep watching!', tone: 'amber' }); return; }
       WT.Cinema.userInput();
       WT.select(null);
       WT.flyTo(WT.RING.center[0], WT.RING.center[1], 1250);
@@ -217,7 +217,7 @@
       <button data-go="overview">${ic('layers')}<span>Overview</span></button>
       <button data-go="newest">${ic('sparkle')}<span>Newest</span></button>
       <button data-go="factory">${ic('factory')}<span>Factories</span></button>
-      <button data-go="ring">${ic('layers')}<span>Ring</span></button>
+      <button data-go="ring">${ic('layers')}<span>Industry</span></button>
       <button data-go="rail">${ic('train')}<span>Rail</span></button>
       <button data-go="port">${ic('ship')}<span>Port</span></button>
       <button data-go="air">${ic('plane')}<span>Air</span></button>`);
@@ -373,7 +373,7 @@
       for (const f of act.slice().reverse()) rows += row(f.uid, f.id, f.type, esc(f.name), 'Online', 'green', money(f.income * 60 * WT.G.INCOME_SCALE) + '/m');
     } else if (tab === 'fleet') {
       for (const tr of WT.trains) rows += row(tr.uid, tr.id, 'Train', `${dot('#2f56e0')}${tr.operator}`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
-      for (const tr of WT.RING.trains) rows += row(tr.uid, tr.id, 'Ring shuttle', `${dot('#2aa198')}${tr.cars.filter((c) => c.cont).length} boxes aboard`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
+      for (const tr of WT.RING.trains) rows += row(tr.uid, tr.id, tr.role === 'shuttle' ? 'Pod shuttle' : tr.ore ? 'Ore train' : 'Industrial freight', `${dot(tr.role === 'shuttle' ? '#2aa198' : '#f0b429')}${tr.cars.filter((c) => c.cont).length} boxes aboard`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
       for (const p of WT.AIR.planes) rows += row(p.uid, p.flight, 'Aircraft', `${dot('#1aa6b7')}${p.from} → ${p.dest}`, p.status, WT.toneFor(p.status), '');
       for (const s of WT.ships) rows += row(s.uid, s.name.replace('MV ', ''), 'Vessel', `${dot('#24336e')}${s.port ? s.port.id : 'At sea'}`, s.status, WT.toneFor(s.status), '');
       for (const t of WT.trucks.filter((x) => x.legs.length).slice(0, 30)) rows += row(t.uid, t.id, t.variant === 'mixer' ? 'Mixer' : 'Truck', `${dot(hex(t.carrier.cab))}${esc(t.mission)}`, t.status, WT.toneFor(t.status), '');

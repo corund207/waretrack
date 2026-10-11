@@ -332,6 +332,9 @@
       const d = t.home && t.home.type === 'Ring depot' && t.home.active ? t.home : rc.ringHome.active ? rc.ringHome : null;
       if (d && spotsFree(d) > 0 && d.roomFor() > 0) { d.pendingDrop++; d.lazyN = (d.lazyN || 0) + 1; t.mission = `Return empty ${rc.id} → ${d.id}`; return [{ fac: d, op: 'drop', lazy: true }]; }
     }
+    // a box that came to a pod by rail goes back to that pod's depot, into its pool (not across the map to the park)
+    const hd = t.home && t.home.type === 'Ring depot' && t.home.active ? t.home : null;
+    if (hd && spotsFree(hd) > 0 && hd.roomFor() > 2) { hd.pendingDrop++; hd.lazyN = (hd.lazyN || 0) + 1; t.mission = `Return empty ${rc.id} → ${hd.id}`; return [{ fac: hd, op: 'drop', lazy: true }]; }
     const open = t.container.open || t.container.tank; // open frames and tanks can't be stuffed with export pallets
     const term = terminals().filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 1);
     // a mover takes its empty straight back to the yard it came from
