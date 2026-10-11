@@ -18,7 +18,6 @@
     'Steel Mill': 0x4a5578, 'Copper Refinery': 0xc87533, 'Chemical Plant': 0x37b26c, Sawmill: 0x9c7a5b, 'Glass Works': 0x1aa6b7, 'Aluminium Smelter': 0x9aa1c4,
     'Wire Mill': 0xb86a2c, 'Motor Works': 0x3a4166, 'Circuit Fab': 0x2f8f57, 'Panel Press': 0x6a7194, 'Moulding Shop': 0x2f56e0, 'Frame Shop': 0xa0754e,
     'E-Bikes': 0x2aa198, 'Solar Panels': 0x2140b8, Machinery: 0xf0b429 };
-  const WALLS = [['#e9ecf7', '#d3d8ec'], ['#dfe6f2', '#c7d0e6'], ['#f1ede6', '#ddd6ca']];
   const IN_POS = [[13, 31], [28, 31], [13, 13]];
   const PROC_NAME = { smelter: 'Foundry + assembly', press: 'Moulding + assembly', tanks: 'Mixing + bottling', sawmill: 'Woodshop + upholstery',
     blast: 'Blast furnace + coil line', refinery: 'Smelting + wire drawing', chem: 'Distillation + polymerisation', saw: 'Debarking + sawing', glassworks: 'Melting + float line',
@@ -33,6 +32,7 @@
       this.recipe = S.PLANTS[name];
       this.intermediate = !!this.recipe.out;
       this.tier = this.recipe.tier;
+      this.pod = (plot && plot.pod) || null; // a plant in one of the Production Ring's pods
       this.partner = this.intermediate ? null : partner || null;
       this.line = { name, colors: this.recipe.colors };
       this.name = this.intermediate ? name : name + ' Plant';
@@ -49,8 +49,6 @@
       this.emitters = [];
       this.starved = null;
       this.blocked = false;
-      this.wall = WT.pick(WALLS);
-      this.roof = WT.pick([0x3f66ee, 0x2aa198, 0x4a5578, 0x3f66ee]);
     }
     get gateIn() { return { A: this.plot.A, z: this.toWorld(0, 46)[1] }; }
     get gateOut() { return { A: this.plot.A, z: this.toWorld(0, -46)[1] }; }
@@ -68,7 +66,7 @@
     build() {
       this.pad();
       this.addGates();
-      const g = this.group, S = this.structure, proc = this.recipe.proc, acc = ACCENT[this.lineName];
+      const g = this.group, S = this.structure, acc = ACCENT[this.lineName];
       W.flat(g, 26, 92, W.COL.apron, 53, 0, 0.026);
       W.flat(g, 6, 98, W.COL.road, LANE_X, 0, 0.029);
       W.flat(g, LANE_X + 3, 6, W.COL.road, (LANE_X + 3) / 2, 46, 0.029);
@@ -86,90 +84,50 @@
       W.dashes(g, guide, 0xffffff, 0.06);
       W.dashes(g, yel, W.COL.yellow, 0.06);
       W.dashes(g, arrows, 0xffffff, 0.06);
+      // every kind of plant has its own design: shed roof, height and cladding, and the process plant beside it
+      const D = WT.PLANT_DESIGN[this.lineName], sh = D.shed, H = sh.h || 13, rise = sh.rise === undefined ? (sh.roof === 'barrel' ? 5 : 3.2) : sh.rise;
       const hf = new T.Group();
       hf.rotation.y = -Math.PI / 2;
       hf.position.x = WALL_X;
       S.add(hf);
       M.shed(hf, {
-        x0: -40, x1: 40, z0: -36, z1: 0, h: 13, doors: DOCKS, sawtooth: true, roof: this.roof, colors: this.wall, doorW: 4.6, doorH: 4.8,
-        extra: (b) => b.box(80.2, 1.2, 36.2, acc, 0, 9.5, -18),
+        x0: -40, x1: 40, z0: -36, z1: 0, h: H, rise, doors: DOCKS, roof: sh.roofCol, colors: sh.wall, doorW: 4.6, doorH: 4.8,
+        sawtooth: sh.roof === 'sawtooth', flat: sh.roof === 'flat', barrel: sh.roof === 'barrel', monitor: sh.roof === 'monitor',
+        extra: (b) => b.box(80.2, 1.2, 36.2, acc, 0, H - 3.5, -18),
       });
       const b = new M.MB();
-      for (const z of [-30, -10, 10]) b.box(4, 1.6, 4, 0xb9bfd8, 78, 16.8, z);
+      // roof ventilators: over the saw-tooth teeth, or along the ridge of a pitched, vaulted or monitor roof (flat roofs
+      // carry their own plant)
+      const fanAt = sh.roof === 'flat' ? [] : sh.roof === 'sawtooth' ? [-30, -10, 10].map((z) => [78, H + 3.8, z])
+        : [-28, 0, 28].map((z) => [84, H + rise + (sh.roof === 'monitor' ? 2 : 0), z]);
+      for (const [x, y, z] of fanAt) b.box(4, 1.6, 4, 0xb9bfd8, x, y, z);
       // belt bridge truss over the apron (no posts in the truck lane)
       b.box(30, 0.5, 0.6, 0x9aa1c4, 52, 6.6, -24.8); b.box(30, 0.5, 0.6, 0x9aa1c4, 52, 6.6, -23.2);
       for (let x = 38; x <= 66; x += 3) b.boxC(0.18, 1.6, 0.18, 0x9aa1c4, x, 7.2, -24.8, 0, 0, 0.6);
       b.box(1.2, 7, 1.2, 0x9aa1c4, 37.5, 0, -24); b.box(1.2, 7, 1.2, 0x9aa1c4, 65, 0, -24);
       const stacks = [];
-      const stack = (x, y, z, c = 0xeef0fa) => stacks.push({ p: [x, y, z], c });
-      if (proc === 'smelter') {
-        b.box(22, 9, 18, 0xb9bfd8, 22, 0, -24); b.box(22.4, 0.6, 18.4, 0x3a4166, 22, 9, -24);
-        M.chimney(b, 14, -28, 1.4, 20, 0xb9bfd8); stack(14, 20.6, -28, 0x9aa1c4);
-      } else if (proc === 'press') {
-        b.box(24, 11, 20, 0xd6dbef, 22, 0, -24); b.box(24.4, 0.6, 20.4, acc, 22, 11, -24);
-        M.silo(b, 8, -37, 2.4, 10, 0xf6f7fd); M.silo(b, 8, -30, 2.4, 10, 0xf6f7fd);
-      } else if (proc === 'tanks') {
-        for (const [x, z, h] of [[10, -40, 12], [18, -40, 14]]) { b.cyl(3, 3, h, 0xe1e6f2, x, h / 2, z, 18); b.sphere(3, 0xe1e6f2, x, h, z, 1, 0.45, 1, 14); b.cyl(3.05, 3.05, 0.4, acc, x, h * 0.6, z, 18); }
-        b.box(22, 8, 18, 0xe9ecf7, 22, 0, -22); b.box(22.4, 0.6, 18.4, acc, 22, 8, -22);
-      } else if (proc === 'sawmill') {
-        b.box(22, 0.4, 18, 0x9c7a5b, 22, 8, -24);
-        for (const x of [12, 22, 32]) for (const z of [-32, -16]) b.box(0.6, 8, 0.6, 0x7a5b46, x, 0, z);
-        b.box(14, 2.4, 3, 0x9aa1c4, 22, 0, -24);
-      } else if (proc === 'blast') {
-        b.cyl(4.2, 5, 26, 0x6a7194, 20, 13, -24, 16);
-        b.cyl(2.6, 4.2, 5, 0x4a5578, 20, 28.5, -24, 16);
-        b.cyl(0.8, 0.8, 10, 0x9aa1c4, 20, 36, -24, 8);
-        for (const z of [-36, -30]) { b.cyl(2.3, 2.3, 18, 0xd6dbef, 8, 9, z, 14); b.sphere(2.3, 0xd6dbef, 8, 18, z, 1, 0.6, 1, 12); }
-        b.box(14, 1, 1, 0x9aa1c4, 14, 14, -33);
-        b.box(16, 6, 12, 0x3a4166, 30, 0, -14);
-        M.chimney(b, 30, -40, 1.8, 30, 0xb9bfd8); stack(30, 30.6, -40, 0x9aa1c4);
-        stack(20, 41, -24, 0xffffff);
-      } else if (proc === 'refinery') {
-        b.box(22, 10, 16, 0xb9bfd8, 22, 0, -26); b.box(22.4, 0.6, 16.4, acc, 22, 10, -26);
-        b.cyl(2.6, 2.6, 6, 0xc87533, 12, 13, -24, 14, 0, 0, 0.5);
-        M.chimney(b, 30, -38, 1.6, 26, 0xb9bfd8); stack(30, 26.6, -38, 0x9aa1c4);
-      } else if (proc === 'chem') {
-        for (const [x, z, h] of [[10, -20, 30], [16, -16, 24], [10, -12, 20]]) {
-          b.cyl(1.4, 1.4, h, 0xe9ecf7, x, h / 2, z, 12);
-          for (let y = 5; y < h; y += 5) b.cyl(2, 2, 0.3, 0x9aa1c4, x, y, z, 12);
-        }
-        for (const [x, z] of [[26, -24], [26, -36]]) { b.sphere(4, 0xf3f5fd, x, 6, z, 1, 1, 1, 16); for (let i = 0; i < 4; i++) b.box(0.4, 4, 0.4, 0x9aa1c4, x + Math.cos(i * 1.57) * 3, 0, z + Math.sin(i * 1.57) * 3); }
-        b.box(20, 0.6, 0.6, 0x9aa1c4, 18, 8, -28);
-        b.cyl(0.5, 0.6, 26, 0xd9434b, 8, 13, -38, 8);
-        stack(8, 27, -38, 0xffb347);
-      } else if (proc === 'saw') {
-        b.box(24, 0.4, 16, 0x9c7a5b, 22, 7, -24);
-        for (const x of [11, 22, 33]) for (const z of [-31, -17]) b.box(0.6, 7, 0.6, 0x7a5b46, x, 0, z);
-        b.box(16, 2.2, 3, 0x9aa1c4, 22, 0, -24);
-      } else if (proc === 'potline') {
-        // long low potroom with roof vents, alumina silos, fume-treatment stack
-        b.box(30, 7, 12, 0xd6dbef, 22, 0, -26); b.box(30.4, 0.6, 12.4, acc, 22, 7, -26);
-        for (let x = 10; x <= 34; x += 4) b.box(2.4, 1.6, 2.4, 0xb9bfd8, x, 7.6, -26);
-        M.silo(b, 8, -38, 2.6, 13, 0xe9ecf7); M.silo(b, 14, -38, 2.6, 13, 0xe9ecf7);
-        M.chimney(b, 36, -38, 1.5, 24, 0xb9bfd8); stack(36, 24.6, -38, 0x9aa1c4);
-      } else if (proc === 'glassworks') {
-        b.box(18, 9, 14, 0xb9bfd8, 16, 0, -24); b.box(18.4, 0.6, 14.4, acc, 16, 9, -24);
-        b.box(3, 3, 30, 0xdfe3f2, 30, 0, -24);
-        M.chimney(b, 12, -38, 1.6, 24, 0xb9bfd8); stack(12, 24.6, -38, 0x9aa1c4);
-      }
-      M.chimney(b, 94, -25, 1.6, 24); stack(94, 24.6, -25);
-      if (!this.intermediate) { M.chimney(b, 94, 25, 1.6, 22); stack(94, 22.6, 25); }
+      const fx = D.build(b, { acc, stack: (x, y, z, c = 0xeef0fa) => stacks.push({ p: [x, y, z], c }) }) || {};
       S.add(b.mesh());
-      if (['smelter', 'blast', 'refinery', 'glassworks', 'potline'].includes(proc)) {
-        const gl = proc === 'glassworks';
-        this.furnace = new T.Mesh(new T.BoxGeometry(gl ? 0.1 : 5.6, 2, gl ? 4 : 0.1), new T.MeshBasicMaterial({ color: 0xff8a2a }));
-        if (proc === 'blast') this.furnace.position.set(20, 2, -18.9);
-        else if (gl) this.furnace.position.set(25.1, 2.4, -24);
-        else this.furnace.position.set(22, 3, proc === 'refinery' ? -17.9 : -14.9);
+      (fx.meshes || []).forEach((m) => S.add(m));
+      if (fx.glow) {
+        this.furnace = new T.Mesh(new T.BoxGeometry(...fx.glow.size), new T.MeshBasicMaterial({ color: 0xff8a2a }));
+        this.furnace.position.set(...fx.glow.at);
         S.add(this.furnace);
       }
-      if (proc === 'sawmill' || proc === 'saw') {
+      if (fx.blade) {
         this.blade = new T.Mesh(new T.CylinderGeometry(1.4, 1.4, 0.15, 16), M.mat(0xb8c2dc));
         this.blade.rotation.x = Math.PI / 2;
-        this.blade.position.set(22, 3.4, -24);
+        this.blade.position.set(...fx.blade);
         S.add(this.blade);
       }
-      this.fans = [-30, -10, 10].map((z) => { const f = M.fan(); f.position.set(78, 18.5, z); S.add(f); return f; });
+      this.fans = fanAt.map(([x, y, z]) => { const f = M.fan(); f.position.set(x, y + 1.7, z); S.add(f); return f; });
+      // a pod plant flies its pod's colours at the gate
+      if (this.pod) {
+        const pb = new M.MB();
+        pb.box(0.3, 7, 0.3, 0x9aa1c4, 3, 0, 37);
+        pb.box(0.12, 2.2, 3.4, this.pod.color, 3, 4.6, 38.8);
+        S.add(pb.mesh());
+      }
       this.stacks = stacks.map((s) => { const o = new T.Object3D(); o.position.set(...s.p); S.add(o); return { o, c: s.c }; });
       // physical inventory yards
       const MAT = WT.SUP.MAT;
@@ -317,22 +275,25 @@
         const po = leg.po || t.po, outM = S.MAT[this.recipe.out];
         t.total = Math.max(3, Math.round((po ? po.qty : 10) / 1.5));
         if (po) S.ev(po, `Loading · ${t.id} at ${this.id}`);
-        if (t.trailer === 'tanker') yield* this.hose(t, d, t.total);
+        // a ring transfer leaves in a container on a flat mover: an ISO tank is pumped full, an open box loaded in view
+        const cont = t.container, into = cont && cont.load ? cont.load : t.bedLoad;
+        if (t.trailer === 'tanker' || (cont && cont.tank)) yield* this.hose(t, d, t.total);
         else {
           // each piece rides the dock belt out, then is swung onto the bed (or into the trailer)
           t.status = 'Loading';
           const from = this.beltPoint(d.obelt, -1), mat = this.recipe.out;
           let landed = 0;
           d.onOut = (it) => WT.spawn((function* () {
-            yield* FX.hop(from, t.bedLoad ? t.bedLoad.topPoint() : this.rearPoint(t), it.c, 0.42, outM.item || 'can');
+            yield* FX.hop(from, into ? into.topPoint() : this.rearPoint(t), it.c, 0.42, outM.item || 'can');
             landed++;
-            t.setBedLoad(mat, landed / t.total);
+            if (cont && cont.load) cont.load.set(landed / t.total); else t.setBedLoad(mat, landed / t.total);
           }).call(this));
           while (t.loaded < t.total) { if (d.obelt.push(WT.pick(outM.colors || [0xe9ecf7]))) { t.loaded++; yield* WT.sleep(0.45); } else yield; }
           while (landed < t.total) yield;
           d.onOut = null;
         }
-        if (po) S.ev(po, `In transit · ${t.id} → ${po.to.id}`);
+        if (cont && po) { S.fillPO(cont, po); cont.status = 'Loaded'; cont.loc = t.id; S.note(cont, `Loaded with ${outM.name} at ${this.id} for ${po.to.id} (${po.id})`); }
+        if (po) S.ev(po, `In transit · ${t.id} → ${cont && po.ring ? po.ring.from.id + ' for the ring' : po.to.id}`);
         yield* WT.sleep(0.8);
         this.moves++;
         return;
@@ -410,7 +371,7 @@
         status, statusTone: status === 'Running' ? 'green' : 'amber',
         where: this.starved ? 'Waiting on ' + S.MAT[this.starved].name : this.intermediate ? (consumers.length ? 'Supplies ' + consumers.slice(0, 3).join(', ') : 'No customers yet') : this.partner ? 'Feeds ' + this.partner.id : 'Standalone',
         bars,
-        rows: [['Process', PROC_NAME[this.recipe.proc]], ['Produced', WT.fmtNum(this.produced) + (this.intermediate ? ' t' : ' units')],
+        rows: [...(this.pod ? [['Pod', `Pod ${this.pod.key} · ${this.pod.name} · rail depot ${(this.pod.depot && this.pod.depot.id) || 'planned'}`]] : []), ['Process', PROC_NAME[this.recipe.proc]], ['Produced', WT.fmtNum(this.produced) + (this.intermediate ? ' t' : ' units')],
           ['Open orders', String(S.orders.filter((o) => o.to === this && o.status !== 'Delivered' && o.status !== 'Cancelled').length)],
           ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
       });

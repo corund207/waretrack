@@ -17,21 +17,21 @@
     'Steel Mill': 600e3, 'Copper Refinery': 520e3, 'Chemical Plant': 560e3, Sawmill: 340e3, 'Glass Works': 450e3, 'Aluminium Smelter': 580e3,
     'Wire Mill': 380e3, 'Motor Works': 470e3, 'Circuit Fab': 520e3, 'Panel Press': 440e3, 'Moulding Shop': 360e3, 'Frame Shop': 320e3,
     'Iron mine': 380e3, 'Coal mine': 360e3, 'Bauxite mine': 380e3, 'Sand quarry': 300e3, 'Grain farm': 280e3,
-    'Container factory': 460e3, 'Gas field': 550e3, 'Off-site empty yard': 420e3, 'Mover depot': 520e3 };
+    'Container factory': 460e3, 'Gas field': 550e3, 'Off-site empty yard': 420e3, 'Mover depot': 520e3, 'Production ring': 700e3, 'Ring depot': 340e3 };
   const DUR = { Warehouse: 26, Factory: 32, 'Rail line': 30, 'Rail terminal': 28, 'Power plant': 34, 'Port terminal': 34, Airfield: 26,
     'Air terminal': 30, Stand: 14, Tower: 18, Headquarters: 40, 'Solar farm': 16, 'Tank farm': 22, Parking: 12,
     'Container depot': 24, 'Truck stop': 18, Substation: 16, 'Water tower': 20,
     'Steel Mill': 38, 'Copper Refinery': 32, 'Chemical Plant': 34, Sawmill: 24, 'Glass Works': 30, 'Aluminium Smelter': 40,
     'Wire Mill': 26, 'Motor Works': 30, 'Circuit Fab': 32, 'Panel Press': 28, 'Moulding Shop': 24, 'Frame Shop': 22,
     'Iron mine': 24, 'Coal mine': 24, 'Bauxite mine': 24, 'Sand quarry': 20, 'Grain farm': 20,
-    'Container factory': 26, 'Gas field': 28, 'Off-site empty yard': 24, 'Mover depot': 22 };
+    'Container factory': 26, 'Gas field': 28, 'Off-site empty yard': 24, 'Mover depot': 22, 'Production ring': 30, 'Ring depot': 22 };
   const ICON = { Warehouse: '🏬', Factory: '🏭', 'Rail line': '🛤️', 'Rail terminal': '🚉', 'Power plant': '⚡', 'Port terminal': '⚓', Airfield: '🛬',
     'Air terminal': '🛫', Stand: '🛩️', Tower: '📡', Headquarters: '🏢', 'Solar farm': '☀️', 'Tank farm': '🛢️', Parking: '🅿️',
     'Container depot': '🧱', 'Truck stop': '⛽', Substation: '🔌', 'Water tower': '💧',
     'Steel Mill': '🔩', 'Copper Refinery': '🟫', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙', 'Aluminium Smelter': '🪨',
     'Wire Mill': '🧵', 'Motor Works': '⚙️', 'Circuit Fab': '💾', 'Panel Press': '🛠️', 'Moulding Shop': '🧴', 'Frame Shop': '🪚',
     'Iron mine': '⛏️', 'Coal mine': '⛏️', 'Bauxite mine': '⛏️', 'Sand quarry': '⛏️', 'Grain farm': '🌾',
-    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖' };
+    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖', 'Production ring': '🔄', 'Ring depot': '🚉' };
   G.ICON = ICON;
   const costOf = (type) => Math.round((COST[type] * Math.pow(1.065, G.done)) / 1000) * 1000;
 
@@ -53,11 +53,15 @@
     }
     return null;
   }
-  // Industrial districts: refineries cluster on the west avenues by the ore trains, component plants on the east
-  // side, final assembly with its distribution centres in the middle. A full district spills onto any free plot.
+  // Industrial districts: refining and component plants go to their pod on the Production Ring (js/ring.js), one of
+  // each kind; any more of a kind cluster in the park, refineries on the west avenues by the ore trains, component
+  // plants on the east side. Final assembly sits with its distribution centres in the middle. A full district
+  // spills onto any free plot.
   const DISTRICT = { 1: [-360, -600], 2: [360, 600], 3: [-120, 120] };
   G.DISTRICT = DISTRICT;
   const plotForTier = (tier) => freePlot(DISTRICT[tier]) || freePlot();
+  const plotFor = (name) => WT.RING.slotFor(name) || plotForTier(WT.SUP.PLANTS[name].tier);
+  const ring = WT.RING;
   // how many plants (any tier) use material m, and how many plants make it
   const usersOf = (m) => WT.facilities.filter((f) => f.type === 'Factory' && f.recipe.in.includes(m)).length;
   const makersOf = (name) => WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === name).length;
@@ -88,16 +92,21 @@
       // the mover fleet must be in place before the first terminal: every container leaves it on a mover
       () => project('Mover depot', () => new WT.MoverDepot(plots(A0, 1, 1, 1))),
       () => project('Rail terminal', () => new WT.RailTerminal(A0)),
-      () => project('Steel Mill', () => new WT.Factory(plots(-360, 1, -1, 0), null, 'Steel Mill')),
+      () => project('Steel Mill', () => new WT.Factory(ring.slotFor('Steel Mill'), null, 'Steel Mill')),
       () => project('Container depot', () => new WT.Depot(plots(A0, -1, 1, 0))),
       () => project('Power plant', () => new WT.PowerPlant(plots(A0, 1, 1, 0))),
       () => project('Warehouse', () => new WT.Warehouse(plots(120, 1, -1, 0), 'fulfil')),
       () => project('Factory', () => new WT.Factory(plots(120, 1, -1, 1), find('WH-03'), 'Electronics')),
       () => project('Truck stop', () => new WT.TruckStop(plots(120, -1, 1, 0))),
       () => project('Port terminal', () => new WT.Port(A0)),
-      () => project('Chemical Plant', () => new WT.Factory(plots(-360, -1, -1, 0), null, 'Chemical Plant')),
-      () => project('Copper Refinery', () => new WT.Factory(plots(-360, 1, -1, 1), null, 'Copper Refinery')),
-      () => project('Motor Works', () => new WT.Factory(plots(360, -1, -1, 0), null, 'Motor Works')),
+      () => project('Chemical Plant', () => new WT.Factory(ring.slotFor('Chemical Plant'), null, 'Chemical Plant')),
+      () => project('Copper Refinery', () => new WT.Factory(ring.slotFor('Copper Refinery'), null, 'Copper Refinery')),
+      () => project('Motor Works', () => new WT.Factory(ring.slotFor('Motor Works'), null, 'Motor Works')),
+      // the loop line between the pods, then a rail depot for each pod that has a plant
+      () => project('Production ring', null),
+      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[0]), { label: 'Pod A rail depot' }),
+      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[2]), { label: 'Pod C rail depot' }),
+      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[1]), { label: 'Pod B rail depot' }),
       () => project('Airfield', () => new WT.Airfield()),
       () => project('Air terminal', () => new WT.AirTerminal()),
       () => project('Stand', () => new WT.Stand(1)),
@@ -117,6 +126,10 @@
       if (!has('Off-site empty yard')) { queue.push(project('Off-site empty yard', () => new WT.OffsiteYard())); return queue[0]; }
     }
     // procedural growth
+    if (ring.built) {
+      const pod = ring.needsDepot();
+      if (pod && !queue.length) { pod.depot = 'planned'; queue.push(project('Ring depot', () => new WT.RingDepot(pod), { label: 'Pod ' + pod.key + ' rail depot' })); return queue[0]; }
+    }
     const stands = count('Stand'), plotFacs = WT.facilities.filter((f) => f.plot).length;
     if (stands < WT.AIR.standXs.length && plotFacs >= 6 + stands * 4) { queue.push(project('Stand', () => new WT.Stand(stands + 1))); return queue[0]; }
     if (W.railBuilt) for (const A of W.AVENUES) {
@@ -141,7 +154,7 @@
     for (const name of WT.SUP.INTERMEDIATE) {
       const r = WT.SUP.PLANTS[name], users = usersOf(r.out), makers = makersOf(name);
       if (users && users > makers * 2) {
-        const p = plotForTier(r.tier);
+        const p = plotFor(name);
         if (p) { p.used = 'planned'; queue.push(project(name, () => new WT.Factory(p, null, name), { plot: p, label: name })); return queue[0]; }
       }
     }
@@ -174,7 +187,7 @@
           const out = WT.SUP.PLANTS[name].out;
           return { name, gap: usersOf(out) + (WT.SUP.PLANTS[line].in.includes(out) ? 1 : 0) - makersOf(name) * 2 };
         }).sort((a, b) => b.gap - a.gap)[0];
-        const p = need && need.gap > 0 && plotForTier(2);
+        const p = need && need.gap > 0 && plotFor(need.name);
         if (p) { p.used = 'planned'; queue.push(project(need.name, () => new WT.Factory(p, null, need.name), { plot: p, label: need.name })); }
       }
       return queue[0];
@@ -327,6 +340,21 @@
     WT.startRail();
   }
 
+  function* buildRing(p) {
+    p.stage = 'Laying the loop';
+    WT.log('🔄 Construction started: Production Ring loop line', 'amber', true);
+    WT.emit('event', { kind: 'rail-build', weight: 3, project: p });
+    const t0 = WT.sim.minutes;
+    WT.spawn((function* () { while (p.stage !== 'Online') { p.progress = Math.min(0.99, (WT.sim.minutes - t0) / (28 * WT.sim.MIN_PER_SEC)); yield; } })());
+    yield* ring.build();
+    p.stage = 'Online';
+    p.progress = 1;
+    G.done++;
+    G.built.push({ id: 'RING', type: 'Production ring', t: WT.sim.minutes });
+    WT.log('🔄 Production Ring open: pod depots join as they are built', 'green', true);
+    WT.RING.startShuttles();
+  }
+
   /* ---------- milestones (the 5-step timeline in the UI) ---------- */
   G.PHASES = [
     { key: 'found', name: 'Founded', test: () => has('Warehouse', (f) => f.active) },
@@ -378,6 +406,7 @@
             G.projects.unshift(next);
             if (G.projects.length > 30) G.projects.pop();
             if (next.type === 'Rail line') WT.spawn(buildRailLine(next));
+            else if (next.type === 'Production ring') WT.spawn(buildRing(next));
             else {
               next.fac = next.make();
               next.label = next.fac.name;

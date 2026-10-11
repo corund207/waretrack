@@ -69,6 +69,11 @@ try {
           if (i && Math.hypot(car.g.position.x - tr.cars[i - 1].g.position.x, car.g.position.z - tr.cars[i - 1].g.position.z) < 12) throw new Error('Train cars overlap: ' + tr.id);
         }
       }
+      for (const tr of WT.RING.trains) for (let i = 1; i < tr.cars.length; i++) {
+        const car = tr.cars[i];
+        if (car.cont && !car.cont.lifting && car.cont.mesh.parent !== car.g.userData.slot) throw new Error('Container detached from ring wagon: ' + tr.id);
+        if (Math.hypot(car.g.position.x - tr.cars[i - 1].g.position.x, car.g.position.z - tr.cars[i - 1].g.position.z) < 12) throw new Error('Ring cars overlap: ' + tr.id);
+      }
       // container handling at the rail and port terminals is for autonomous movers only
       for (const t of WT.trucks) if (t.variant !== 'mover' && [t.curLeg, ...t.legs].some((l) => l && /Rail terminal|Port terminal/.test(l.fac.type))) (WT.__semiAtTerminal = WT.__semiAtTerminal || []).push(t.mission);
       const works = WT.REMOTE.containerFactory();
@@ -118,6 +123,8 @@ try {
       moverDepots: facs.filter((f) => f.type === 'Mover depot').length,
       cratesIssued: WT.SUP.cratesIssued, cratesRailed: WT.SUP.cratesRailed,
       moversDelivered: facs.filter((f) => f.type === 'Mover depot').reduce((n, f) => n + f.delivered, 0),
+      ring: { depots: facs.filter((f) => f.type === 'Ring depot').length, podPlants: plants.filter((f) => f.pod).length, shuttles: WT.RING.trains.length, ...WT.RING.stats,
+        delivered: WT.SUP.orders.filter((o) => o.ring && o.status === 'Delivered').length },
       moverDeliveries: WT.SUP.orders.filter((o) => o.status === 'Delivered' && o.events.some((e) => /^Mover assigned|^Collecting/.test(e.text))).length,
     };
   });
@@ -137,6 +144,8 @@ try {
   check(st.roadOrders === 0 && st.truckIntake === 0, 'no resources are trucked in by road (every order uses a trunk carrier)');
   check(st.moverDeliveries > 20, `${st.moverDeliveries} of the latest orders delivered to plants by autonomous container movers (${st.movers} active)`);
   check(st.semiAtTerminal.length === 0, 'only autonomous movers collect or drop containers at rail and port terminals' + (st.semiAtTerminal.length ? ': ' + [...new Set(st.semiAtTerminal)].slice(0, 3).join(' | ') : ''));
+  check(st.ring.depots >= 3 && st.ring.shuttles >= 2 && st.ring.podPlants >= 4, `Production Ring: ${st.ring.podPlants} pod plants, ${st.ring.depots} pod depots, ${st.ring.shuttles} shuttles`);
+  check(st.ring.moved > 0 && st.ring.delivered > 0, `${st.ring.moved} boxes carried between pods by ring shuttle, ${st.ring.delivered} ring transfers delivered (${st.ring.empties} empties home, ${st.ring.calls} depot calls)`);
   check(st.cratesRailed > 0, `${st.cratesRailed} product crates left by rail (${st.cratesIssued} issued to distribution centres)`);
   check(st.moverDepots >= 1 && st.fleet.size > 20 && st.moversDelivered > 0, `mover fleet grew to ${st.fleet.size} (${st.moversDelivered} delivered by lowloader, ${st.moverDepots} depot${st.moverDepots > 1 ? 's' : ''}, ${st.fleet.out} on jobs)`);
   console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);
@@ -215,7 +224,7 @@ function auditPaths() {
   const skip = new Set();
   const mark = (o) => o && o.traverse((c) => skip.add(c));
   WT.trucks.forEach((t) => mark(t.mesh));
-  (WT.trains || []).forEach((t) => t.cars.forEach((c) => mark(c.g)));
+  [...(WT.trains || []), ...WT.RING.trains].forEach((t) => t.cars.forEach((c) => mark(c.g)));
   (WT.ships || []).forEach((s) => mark(s.mesh));
   (WT.AIR.planes || []).forEach((p) => mark(p.mesh));
   WT.FX.belts.forEach((b) => skip.add(b.im));

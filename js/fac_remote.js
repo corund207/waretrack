@@ -398,6 +398,8 @@
       WT.on('frame', () => this.update(WT.sim.dt));
     }
     send(path, color, onArrive) { this.items.push({ path, s: 0, color, onArrive }); }
+    // slugs in a buried stretch of a path (path.under = [s0, s1]) are out of sight
+    hidden(it) { const u = it.path.under; return u && it.s > u[0] && it.s < u[1]; }
     update(dt) {
       if (dt <= 0 && this.im.count === this.items.length) return;
       let n = 0;
@@ -408,6 +410,7 @@
       }
       for (const it of this.items) {
         if (n >= 400) break;
+        if (this.hidden(it)) continue;
         const p = it.path.at(it.s);
         this._m.makeTranslation(p.x, PIPE_Y + 0.05, p.z);
         this.im.setMatrixAt(n, this._m);
@@ -497,6 +500,7 @@
       const p = new T.Vector3();
       pile.g.getWorldPosition(p);
       const A = f.plot.A, s = f.plot.s, vx = A + s * 9.2;
+      if (f.pod) return this.ringBranch(f, p, vx, s);
       const pts = [[vx, PIPE_Z], [vx, p.z], [p.x - s * 3.6, p.z]];
       // no rack posts across roads, the rail corridor, junctions or plot gates
       const gates = W.plots.filter((q) => q.A === A && q.s === s).flatMap((q) => [q.zc + 46 * q.s, q.zc - 46 * q.s]);
@@ -507,6 +511,26 @@
       const path = WT.buildPath([[this.x - 70, PIPE_Z], [vx, PIPE_Z], ...pts.slice(1)], 2);
       this.branches.set(f, path);
       WT.log(`🛢️ Pipeline spur to ${f.id} commissioned`, 'green', true);
+      return path;
+    }
+    // the Production Ring lies beyond the mines and the rail yards, so its spurs run buried from the trunk's end and
+    // come up at a valve station on the avenue verge beside each plant, then cross into its yard on a short rack
+    ringBranch(f, p, vx, s) {
+      const TE = [-760, PIPE_Z], b = new M.MB();
+      if (!R.ringFeed) {
+        R.ringFeed = true;
+        b.box(3, 1.6, 3, 0xf0b429, TE[0] - 2, 0, TE[1]); b.box(0.8, PIPE_Y, 0.8, 0xd9dde8, TE[0], 0, TE[1]); // where the line goes underground
+      }
+      b.box(2.4, 1.4, 2.4, 0xf0b429, vx, 0, p.z); b.cyl(0.6, 0.6, 0.2, 0xd9434b, vx, 1.6, p.z, 12); // valve station
+      b.box(0.8, PIPE_Y, 0.8, 0xd9dde8, vx, 0, p.z);
+      b.box(0.8, PIPE_Y, 0.8, 0xd9dde8, p.x - s * 3.6, 0, p.z); // riser down into the tank
+      WT.scene.add(b.mesh());
+      pipeRack(WT.scene, [[vx, p.z], [p.x - s * 3.6, p.z]]);
+      const path = WT.buildPath([[this.x - 70, PIPE_Z], TE, [vx, p.z], [p.x - s * 3.6, p.z]], 2);
+      const sA = Math.hypot(TE[0] - this.x + 70, 0), sB = sA + Math.hypot(vx - TE[0], p.z - TE[1]);
+      path.under = [sA + 1, sB - 1];
+      this.branches.set(f, path);
+      WT.log(`🛢️ Buried pipeline spur to ${f.id} on the Production Ring commissioned`, 'green', true);
       return path;
     }
     // pipeline batches: each booked order is pumped down the line as a train of product slugs

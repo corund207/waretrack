@@ -12,6 +12,8 @@
   W.EDGE = 1700;
   // extra rail yards beyond the park grid, each on an access avenue of its own along the mainline (600 is the airfield)
   W.YARD_SITES = [-840, 1320, -1080];
+  // the Production Ring's two pod avenues, south of the highway west of the park (js/ring.js)
+  W.RING_AVENUES = [-1440, -960];
   W.SEA_Z = 600;
   W.RAIL = { zE: -650, zW: -662 };
   // two lanes each way: highway lanes at |z| 2.0 / 5.6, avenue lanes at |x − A| 1.9 / 5.5 (inner / outer)
@@ -93,6 +95,7 @@
     if (A === 600 && h < 0 && s > 0) continue; // airport district
     makePlot(A, s, h, k);
   }
+  W.makePlot = makePlot; // the Production Ring adds its pod plots (js/ring.js)
   W.plotAt = (A, s, h, k) => W.plots.find((p) => p.A === A && p.s === s && p.h === h && p.k === k);
 
   /* ---------- avenues (grow with the park) ---------- */
@@ -336,7 +339,7 @@
     const a = Math.floor(x0 / step) * step, b = Math.ceil(x1 / step) * step;
     for (let x = a; x <= b; x += step) {
       if (r.list.find((p) => p.x === x)) continue;
-      if ([...W.AVENUES, ...W.YARD_SITES].some((A) => Math.abs(A - x) < 10)) continue; // leave room for every avenue
+      if ([...W.AVENUES, ...W.YARD_SITES, ...W.RING_AVENUES].some((A) => Math.abs(A - x) < 10)) continue; // leave room for every avenue
       const m = M.pylon();
       m.position.set(x, 0, z);
       m.scale.y = 0.01;

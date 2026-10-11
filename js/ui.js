@@ -188,6 +188,13 @@
       WT.flyTo((Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...zs) + Math.min(...zs)) / 2, WT.clamp(ext * 1.25, 260, 1400));
       return;
     }
+    if (a === 'ring') {
+      if (!WT.RING.built && !WT.facilities.some((x) => x.pod)) { showToast({ msg: 'Production Ring not built yet — keep watching!', tone: 'amber' }); return; }
+      WT.Cinema.userInput();
+      WT.select(null);
+      WT.flyTo(WT.RING.center[0], WT.RING.center[1], 720);
+      return;
+    }
     if (a === 'newest') f = WT.facilities[WT.facilities.length - 1];
     if (a === 'rail') f = F.find((x) => x.type === 'Rail terminal');
     if (a === 'port') f = F.find((x) => x.type === 'Port terminal');
@@ -210,6 +217,7 @@
       <button data-go="overview">${ic('layers')}<span>Overview</span></button>
       <button data-go="newest">${ic('sparkle')}<span>Newest</span></button>
       <button data-go="factory">${ic('factory')}<span>Factories</span></button>
+      <button data-go="ring">${ic('layers')}<span>Ring</span></button>
       <button data-go="rail">${ic('train')}<span>Rail</span></button>
       <button data-go="port">${ic('ship')}<span>Port</span></button>
       <button data-go="air">${ic('plane')}<span>Air</span></button>`);
@@ -236,7 +244,7 @@
   function closeMenus() { document.querySelectorAll('.dropdown.open').forEach((d) => d.classList.remove('open')); }
 
   /* ---------- top bar + KPIs ---------- */
-  const fleet = () => WT.trucks.length + WT.trains.length + WT.AIR.planes.length + WT.ships.length;
+  const fleet = () => WT.trucks.length + WT.trains.length + WT.RING.trains.length + WT.AIR.planes.length + WT.ships.length;
   function kpi(icon, label, value, sub, delta) {
     return `<div class="kpi card"><div class="kpi-ic">${ic(icon)}</div><div class="kpi-body"><div class="kpi-label">${label}</div>
       <div class="kpi-val">${value}${delta ? `<span class="delta up">↑ ${delta}</span>` : ''}</div><div class="kpi-sub">${esc(sub)}</div></div></div>`;
@@ -252,7 +260,7 @@
       kpi('cash', 'Capital', money(G.money), next ? 'next: ' + next.label + ' · ' + money(next.cost) : 'all plots planned', ''),
       kpi('warehouse', 'Facilities', act, building ? building + ' under construction' : 'none under construction', building ? '+' + building : ''),
       kpi('trend', 'Revenue', money(rate) + '/min', 'earned ' + money(G.earned), ''),
-      kpi('truck', 'Fleet active', fleet(), `${WT.trucks.length} road · ${WT.trains.length} rail · ${WT.AIR.planes.length} air · ${WT.ships.length} sea`, ''),
+      kpi('truck', 'Fleet active', fleet(), `${WT.trucks.length} road · ${WT.trains.length + WT.RING.trains.length} rail · ${WT.AIR.planes.length} air · ${WT.ships.length} sea`, ''),
     ].join(''));
     setHTML('#cineBar', `<span class="cb-logo">${ic('video')}</span><b>Riverside Logistics Park</b><span class="ver dark">v${WT.VERSION}</span><span>${act} facilities</span><span>${money(G.money)}</span><span>${WT.fmtTime(WT.sim.minutes)}</span>${building ? `<span class="cb-build">${ic('crane')} ${building} building</span>` : ''}<button data-act="exit">Exit cinema (U)</button>`);
     renderChips();
@@ -344,7 +352,7 @@
         const bars = f.recipe.in.map((m) => { const p = Math.round(WT.clamp(f.stock[m] / f.cap, 0, 1) * 100); return `<span class="sb" title="${esc(S.MAT[m].name)}"><i class="${p < 15 ? 'low' : p < 40 ? 'mid' : ''}" style="height:${p}%"></i></span>`; }).join('');
         const inb = f.recipe.in.reduce((n, m) => n + S.openCount(f, m), 0);
         const outBar = f.intermediate ? `<span class="sb out"><i style="height:${Math.round((f.outStock / f.outCap) * 100)}%"></i></span>` : '';
-        rows += row(f.uid, f.id, `T${f.tier} · ${f.lineName}`, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
+        rows += row(f.uid, f.id, `${f.pod ? 'Pod ' + f.pod.key + ' · ' : ''}T${f.tier} · ${f.lineName}`, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
       }
       for (const t of act.filter((x) => x.type === 'Rail terminal' || x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, (t.trainsIn ? t.trainsIn().length : t.busy && t.busy !== 'incoming') ? 'Vessel/train in' : 'Open', 'blue', '');
       for (const d of act.filter((x) => x.type === 'Container depot')) rows += row(d.uid, d.id, 'Depot', `${d.count()} empties stored`, 'Open', 'green', '');
@@ -365,6 +373,7 @@
       for (const f of act.slice().reverse()) rows += row(f.uid, f.id, f.type, esc(f.name), 'Online', 'green', money(f.income * 60 * WT.G.INCOME_SCALE) + '/m');
     } else if (tab === 'fleet') {
       for (const tr of WT.trains) rows += row(tr.uid, tr.id, 'Train', `${dot('#2f56e0')}${tr.operator}`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
+      for (const tr of WT.RING.trains) rows += row(tr.uid, tr.id, 'Ring shuttle', `${dot('#2aa198')}${tr.cars.filter((c) => c.cont).length} boxes aboard`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
       for (const p of WT.AIR.planes) rows += row(p.uid, p.flight, 'Aircraft', `${dot('#1aa6b7')}${p.from} → ${p.dest}`, p.status, WT.toneFor(p.status), '');
       for (const s of WT.ships) rows += row(s.uid, s.name.replace('MV ', ''), 'Vessel', `${dot('#24336e')}${s.port ? s.port.id : 'At sea'}`, s.status, WT.toneFor(s.status), '');
       for (const t of WT.trucks.filter((x) => x.legs.length).slice(0, 30)) rows += row(t.uid, t.id, t.variant === 'mixer' ? 'Mixer' : 'Truck', `${dot(hex(t.carrier.cab))}${esc(t.mission)}`, t.status, WT.toneFor(t.status), '');

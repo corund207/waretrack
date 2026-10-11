@@ -326,6 +326,12 @@
       return null;
     }
     if (!t.container || t.container.full) return null;
+    // a ring box goes back to the pod depot it was collected from, and from there home by shuttle
+    const rc = t.container;
+    if (rc.ringHome) {
+      const d = t.home && t.home.type === 'Ring depot' && t.home.active ? t.home : rc.ringHome.active ? rc.ringHome : null;
+      if (d && spotsFree(d) > 0 && d.roomFor() > 0) { d.pendingDrop++; d.lazyN = (d.lazyN || 0) + 1; t.mission = `Return empty ${rc.id} → ${d.id}`; return [{ fac: d, op: 'drop', lazy: true }]; }
+    }
     const open = t.container.open || t.container.tank; // open frames and tanks can't be stuffed with export pallets
     const term = terminals().filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 1);
     // a mover takes its empty straight back to the yard it came from
@@ -375,6 +381,8 @@
     if (!open(po)) return true;
     let p = po.from;
     if (!p || !p.active) { const ps = S.producers(po.mat); if (!ps.length) { S.cancel(po, 'producing plant closed'); return true; } p = po.from = ps[0]; }
+    const ring = WT.RING.route(p, po.to);
+    if (ring) return ringOut(po, p, ring);
     if (p.outStock < po.qty || !p.freeDocks('ship') || spotsFree(po.to, 'unload') < 1) { if (p.outStock < po.qty) S.ev(po, `In production · ${p.id}`); return false; }
     const tank = S.MAT[po.mat].pack === 'tanker';
     const t = launchMover({ trailer: tank ? 'tanker' : 'stake', home: p, mission: `Transfer ${po.id}: ${p.id} → ${po.to.id}` },
@@ -385,6 +393,27 @@
     t.setBedLoad(po.mat, 0); // the mover arrives empty under the producer's out-belt
     po.vehicle = t;
     S.ev(po, `Collecting · ${t.id} at ${p.id}`);
+    return true;
+  }
+  // between pods it goes by the Production Ring: a mover takes an empty box from the pod depot's pool (or a fresh one
+  // from the leasing pool), is loaded at the producer's shipping dock and drops the box back at the depot for the next
+  // shuttle; the box is collected from the consumer's pod depot like any grounded container
+  function ringOut(po, p, ring) {
+    const dp = ring.from, dq = ring.to;
+    if (p.outStock < po.qty) { S.ev(po, `In production · ${p.id}`); return false; }
+    if (!p.freeDocks('ship') || spotsFree(dp) < 1 || dp.roomFor() < 2 || dq.roomFor() < 2) return false;
+    const empty = dp.findEmpty(po.mat), c = empty ? null : S.newContainer(11, po.mat);
+    if (empty) empty.reserved = true;
+    const legs = [...(empty ? [{ fac: dp, op: 'pick', cont: empty, lazy: true }] : []), { fac: p, op: 'ship', po }, { fac: dp, op: 'drop', lazy: true }];
+    const t = launchMover({ trailer: 'flat', container: c || undefined, home: dp, mission: `Ring transfer ${po.id}: ${p.id} → ${dp.id} → ${dq.id} → ${po.to.id}` }, legs);
+    if (!t) { if (empty) empty.reserved = false; if (c) WT.unregister(c); return false; }
+    if (c) { c.ringHome = dp; WT.RING.stats.issued++; S.note(c, `Issued to ${dp.id}'s ring pool`); }
+    dp.pendingDrop++; dq.incoming++;
+    p.outStock -= po.qty;
+    po.ring = ring;
+    t.po = po; t.cargo = { mat: po.mat, qty: po.qty };
+    po.vehicle = t;
+    S.ev(po, `Collecting · ${t.id} at ${p.id} for the ring (${dp.id} → ${dq.id})`);
     return true;
   }
   function drain(q, fn, max) {

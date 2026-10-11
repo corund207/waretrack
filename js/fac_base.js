@@ -225,6 +225,24 @@
         b.boxC(sw * 0.9, 0.25, d + 1.2, roofCol, sx + sw * 0.45, h + 1.8, cz, 0, 0, 0.42);
         b.box(0.25, 3.4, d + 1.2, 0xb9c8ff, sx + sw * 0.86, h + 0.2, cz);
       }
+    } else if (o.barrel) {
+      // barrel vault: a half cylinder along the shed, flattened to the rise, closed at both ends
+      const r = d / 2 + 0.8, k = rise / r;
+      const rg = new T.CylinderGeometry(r, r, w + 1.6, 28, 1, true, 0, Math.PI);
+      rg.rotateZ(Math.PI / 2); rg.scale(1, k, 1); rg.translate(cx, h, cz);
+      b.geo(rg, roofCol);
+      for (const [ex, ry] of [[x0 - 0.8, -Math.PI / 2], [x1 + 0.8, Math.PI / 2]]) {
+        const cg = new T.CircleGeometry(r, 28, 0, Math.PI);
+        cg.rotateY(ry); cg.scale(1, k, 1); cg.translate(ex, h, cz);
+        b.geo(cg, M.shade(roofCol, 0.88));
+      }
+      // standing-seam ribs and a skylight strip along the crown
+      for (let sx = x0; sx <= x1 + 0.01; sx += 8) {
+        const tg = new T.TorusGeometry(r, 0.09, 4, 20, Math.PI);
+        tg.rotateY(Math.PI / 2); tg.scale(1, k, 1); tg.translate(sx, h, cz);
+        b.geo(tg, M.shade(roofCol, 0.8));
+      }
+      b.box(w - 2, 0.2, 2.4, 0xb9c8ff, cx, h + rise - 0.05, cz);
     } else {
       const shape = new T.Shape();
       shape.moveTo(-d / 2 - 0.8, 0); shape.lineTo(0, rise); shape.lineTo(d / 2 + 0.8, 0); shape.lineTo(-d / 2 - 0.8, 0);
@@ -237,6 +255,11 @@
         const sl = Math.atan2(rise, d / 2 + 0.8);
         b.boxC(3.5, 0.15, Math.min(5, d / 3), 0xb9c8ff, sx, h + rise * 0.5 + 0.1, cz + d / 4, sl, 0, 0);
         b.boxC(3.5, 0.15, Math.min(5, d / 3), 0xb9c8ff, sx, h + rise * 0.5 + 0.1, cz - d / 4, -sl, 0, 0);
+      }
+      if (o.monitor) {
+        // roof monitor: a glazed clerestory riding the ridge, with its own little roof
+        b.box(w - 4, 2.2, 5, 0xb9c8ff, cx, h + rise - 0.6, cz);
+        b.box(w - 3.4, 0.4, 6.6, roofCol, cx, h + rise + 1.6, cz);
       }
     }
     b.box(w + 0.2, 0.6, 0.8, 0x2140b8, cx, h - 0.6, z1 + 0.1);
