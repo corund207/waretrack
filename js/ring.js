@@ -30,11 +30,13 @@
     N1: { name: 'Metals', tier: 1, plants: ['Steel Mill', 'Copper Refinery', 'Aluminium Smelter'], color: 0xd9622b },
     N2: { name: 'Materials', tier: 1, plants: ['Chemical Plant', 'Sawmill', 'Glass Works'], color: 0x37b26c },
     N3: { name: 'Drives & Circuits', tier: 2, plants: ['Wire Mill', 'Motor Works', 'Circuit Fab'], color: 0x2f56e0 },
-    N4: { name: 'Assembly North', tier: 3, plants: ['Appliances', 'Auto Parts', 'Machinery'], color: 0xf0b429 },
-    N5: { name: 'Assembly Tech', tier: 3, plants: ['Electronics', 'E-Bikes', 'Solar Panels'], color: 0x1aa6b7 },
+    N4: { name: 'Assembly North', tier: 3, plants: ['Appliances', 'Auto Parts'], color: 0xf0b429 },
+    N5: { name: 'Assembly Tech', tier: 3, plants: ['Electronics', 'Machinery'], color: 0x1aa6b7 },
+    N6: { name: 'Assembly Mobility', tier: 3, plants: ['E-Bikes', 'Solar Panels'], color: 0x2aa198 },
     S3: { name: 'Bodies & Fittings', tier: 2, plants: ['Panel Press', 'Moulding Shop', 'Frame Shop'], color: 0x7a5cd6 },
     S4: { name: 'Port', port: true, plants: [], color: 0x3a6ff7 },
-    S5: { name: 'Assembly South', tier: 3, plants: ['Beverages', 'Furniture', 'Pharma'], color: 0xd9434b },
+    S5: { name: 'Assembly South', tier: 3, plants: ['Beverages', 'Furniture'], color: 0xd9434b },
+    S6: { name: 'Assembly Health', tier: 3, plants: ['Pharma'], color: 0x6fdc8c },
   };
   R.BLOCKS = [];
   W.AVENUES.forEach((A, i) => {
@@ -51,14 +53,15 @@
         b.moverPlot = plot(sSt, 0);
       }
       if (b.tier === 3) {
-        // three assembly lines, each belting its cartons into a distribution centre next door (one centre serves the
-        // two lines either side of it)
-        b.slots = [[-sSt, 0], [-sSt, 2], [sSt, 2]].map(([s, k], j) => plot(s, k, { podPlant: b.plants[j] }));
-        const dcA = plot(-sSt, 1, { podDC: true }), dcB = plot(sSt, 3, { podDC: true });
-        b.dcs = [dcA, dcA, dcB];
+        // an assembly line on each side of the road, each belting its cartons into a distribution centre next door,
+        // and an export station for the product crates on the spine at the far side
+        b.slots = [[sSt, 2], [-sSt, 2]].slice(0, b.plants.length).map(([s, k], j) => plot(s, k, { podPlant: b.plants[j] }));
+        b.dcs = [[sSt, 3], [-sSt, 3]].slice(0, b.plants.length).map(([s, k]) => plot(s, k, { podDC: true }));
+        b.exportSpine = W.SPINES.indexOf(A - sSt * 240);
+        if (b.exportSpine >= 0) b.exportPlot = plot(-sSt, 1, { podDepot: true });
       } else if (b.tier) b.slots = [[-sSt, 1], [-sSt, 0], [sSt, 2]].map(([s, k], j) => plot(s, k, { podPlant: b.plants[j] }));
       else b.slots = [];
-      const taken = [b.stationPlot, b.moverPlot, ...b.slots, ...b.dcs];
+      const taken = [b.stationPlot, b.moverPlot, b.exportPlot, ...b.slots, ...b.dcs];
       b.fillers = b.plots.filter((p) => !taken.includes(p));
       const zs = b.plots.map((p) => p.zc);
       b.z0 = Math.min(...zs) - 53; b.z1 = Math.max(...zs) + 53;
@@ -230,7 +233,10 @@
     curWork = null;
     return loop;
   }
-  for (const b of R.BLOCKS) if (b.stationPlot) b.station = station(b.key, b.spine, b.sx < b.A ? 1 : -1, b.stationPlot.zc);
+  for (const b of R.BLOCKS) {
+    if (b.stationPlot) b.station = station(b.key, b.spine, b.sx < b.A ? 1 : -1, b.stationPlot.zc);
+    if (b.exportPlot) b.exportStation = station(b.key + 'x', b.exportSpine, W.SPINES[b.exportSpine] < b.A ? 1 : -1, b.exportPlot.zc);
+  }
 
   // a stabling yard at the foot of every spine: four roads off the southbound line, round a balloon onto the
   // northbound one; idle trains wait here instead of circling, and a train that has to turn round runs through
@@ -528,7 +534,7 @@
     let mb = null, i = 0;
     const shrub = (x, z) => { if (i % 12 === 0) { if (mb) g.add(mb.mesh()); mb = new M.MB(); } mb.blob(1.3, i % 3 ? 0x4f7d3a : 0x5c8a42, x, 1.1, z, 1.2, 0.85, 1.2, 1, 0.3, i + 1); i++; };
     for (const sd of [-1, 1]) {
-      if (b.stationPlot && sd === b.sSt) continue;
+      if ((b.stationPlot && sd === b.sSt) || (b.exportPlot && sd === -b.sSt)) continue;
       for (let z = z0 + 3; z <= z1 - 3; z += 3.2) shrub(A + sd * 121, z);
     }
     // across the far end (away from the highway), and across the near end either side of the road's turning head
@@ -547,10 +553,12 @@
   const BAYS = [20, -2, -24], BAY_X = 62, BYP_X = 54, TRACK_X = 104, XC = 81, SPAN = 66, SAFE = 10.5, SPEED = 28, U_MAX = 33;
   const ROWS = [68, 74, 80, 86, 92], COLS = [-32.5, -19.5, -6.5, 6.5, 19.5, 32.5];
   class BlockStation extends WT.Facility {
-    constructor(pod) {
-      super('Block station', 'ST', `Block ${pod.key} Station`, pod.stationPlot);
+    constructor(pod, exp) {
+      super('Block station', exp ? 'EX' : 'ST', `Block ${pod.key} ${exp ? 'Export Station' : 'Station'}`, exp ? pod.exportPlot : pod.stationPlot);
       this.pod = pod;
-      pod.depot = this;
+      this.exportOnly = !!exp; // (only product crates and the trains that collect them)
+      this.skey = pod.key + (exp ? 'x' : '');
+      if (exp) pod.exportDepot = this; else pod.depot = this;
       this.docks = BAYS.map((z, i) => ({ n: i + 1, x: BAY_X, z, truck: null, job: null, ops: ['pick', 'drop'] }));
       this.slots = [];
       for (const x of ROWS) for (const z of COLS) this.slots.push({ x, z, items: [] });
@@ -597,13 +605,13 @@
       for (let z = 40; z > -44; z -= 14) white.push({ x: BYP_X, z, len: 2.2, w: 0.5, rot: Math.PI / 2 });
       W.dashes(g, yel, W.COL.yellow, 0.062);
       W.dashes(g, white, 0xffffff, 0.06);
-      W.groundText(g, 'BLOCK ' + pod.key, 66, 34, 10, 5, hex(pod.color), Math.PI / 2, 90);
+      W.groundText(g, (this.exportOnly ? 'EXPORT ' : 'BLOCK ') + pod.key, 66, 34, 10, 5, hex(pod.color), Math.PI / 2, 90);
       const b = new M.MB();
       for (const x of [XC - SPAN / 2, XC + SPAN / 2]) b.box(0.5, 0.15, 80, 0x7a81a4, x, 0.04, 0); // crane rails
       for (const z of [-24, 0, 24]) { b.box(0.25, 6, 0.25, 0x9aa1c4, 100.9, 0, z); b.box(1.6, 0.3, 0.5, 0xeef0fa, 100.2, 6, z); } // platform lamps
       S.add(b.mesh());
       M.block(S, { x: 20, z: 0, w: 14, d: 12, h: 8, trim: pod.color }); // depot office
-      const board = sign([['BLOCK ' + pod.key, 104, 0.34], [pod.name.toUpperCase(), 52, 0.66], [(pod.tier ? 'Tier ' + pod.tier + ' · ' + WT.SUP.TIER_NAME[pod.tier] : 'Sea freight') + ' · station', 26, 0.87]], 9, 6, hex(pod.color));
+      const board = sign([['BLOCK ' + pod.key, 104, 0.34], [pod.name.toUpperCase(), 52, 0.66], [this.exportOnly ? 'Export station · product crates out' : (pod.tier ? 'Tier ' + pod.tier + ' · ' + WT.SUP.TIER_NAME[pod.tier] : 'Sea freight') + ' · station', 26, 0.87]], 9, 6, hex(pod.color));
       board.position.set(5, 0, 20);
       S.add(board);
       // one rail-mounted gantry: its rails run along local z, so it is mounted in a frame whose x is the depot's z
@@ -614,18 +622,18 @@
       c.group.rotation.y = Math.PI / 2;
       c.group.position.set(0, 0, -XC);
       rf.add(c.group);
-      this.crane = Object.assign(c, { id: 'RMG-' + pod.key, task: 'Idle', lifts: 0, trainBox: false });
-      WT.spawn(R.layWorks('st' + pod.key, 16)); // its loop off the spine goes down with it
+      this.crane = Object.assign(c, { id: 'RMG-' + this.skey, task: 'Idle', lifts: 0, trainBox: false });
+      WT.spawn(R.layWorks('st' + this.skey, 16)); // its loop off the spine goes down with it
     }
     activate() {
       super.activate();
       // where on the network the platform is: trains stop with their wagons centred on it
       this.platforms = [TRACK_X, TRACK_X + 6, TRACK_X - 6].map((x, i) => {
-        const w = this.world(x, 0, 0), at = locate(w.x, w.z, (e) => e.station === this.pod.key && e.platform === i);
+        const w = this.world(x, 0, 0), at = locate(w.x, w.z, (e) => e.station === this.skey && e.platform === i);
         return { i, edge: at.e, off: at.s, claim: null };
       });
       this.stopEdge = this.platforms[0].edge; this.stopOff = this.platforms[0].off;
-      this.lead = EDGES.find((e) => e.id === 'st' + this.pod.key + '-lead');
+      this.lead = EDGES.find((e) => e.id === 'st' + this.skey + '-lead');
       WT.spawn(this.craneWorker());
       R.startShuttles();
     }
@@ -880,7 +888,7 @@
       const pool = items.filter((c) => this.idle(c)).length, out = items.filter((c) => c.ringTo && c.ringTo !== this && c.ringTo !== R.EXPORT).length;
       const crates = items.filter((c) => c.ringTo === R.EXPORT).length, wait = items.filter((c) => c.full && !c.ringTo).length;
       return this.cardBase({
-        kicker: `Facility · Block station · Block ${this.pod.key}`, icon: '🚉', sub: `Block ${this.pod.key} · ${this.pod.name}${this.pod.plants.length ? ' — ' + this.pod.plants.join(', ') : ''}`,
+        kicker: `Facility · ${this.exportOnly ? 'Export station' : 'Block station'} · Block ${this.pod.key}`, icon: '🚉', sub: `Block ${this.pod.key} · ${this.pod.name}${this.pod.plants.length ? ' — ' + this.pod.plants.join(', ') : ''}`,
         where: this.trains.length ? this.trains.map((t) => t.id).join(' + ') + ' at the platforms' : 'Platforms clear',
         rows: [['To other blocks', String(out)], ['Crates for export', String(crates)], ['Awaiting a mover', String(wait)], ['Empties in pool', String(pool)], ['Inbound by rail', String(this.incoming)],
           ['Yard', `${items.length} boxes · ${this.freeSlots()} of ${this.slots.length} slots free`], ['Gantry', this.crane ? `${this.crane.carry ? 'Lifting' : this.crane.task} · ${this.crane.lifts} lifts` : 'Being erected'],

@@ -105,9 +105,10 @@ The **Orders** tab follows every order from placement to delivery.
 **Multi-stage industry**
 
 Production runs in **three tiers**, each in blocks of its own: Metals and Materials (refining) next to the mines in
-the north-west, Drives & Circuits and Bodies & Fittings (components) beside them, and three assembly blocks in the
-middle of the map, each line belting its cartons into a distribution centre next door. One plant of each kind supplies
-every line that uses its output. The Port block sits on the coast, and the rest are utility blocks.
+the north-west, Drives & Circuits and Bodies & Fittings (components) beside them, and five assembly blocks across the
+middle and east of the map, each with an assembly line either side of its road belting its cartons into a distribution
+centre next door. One plant of each kind supplies every line that uses its output. The Port block sits on the coast,
+and the rest are utility blocks.
 
 **The rail grid**, laid out like a big rail base: double-track running lines (one track each way, trains keep right)
 with full junctions, and every stop on a loop of its own.
@@ -118,7 +119,9 @@ with full junctions, and every stop on a loop of its own.
   middle trunk at a four-way junction, over the highway on a viaduct, down to a **stabling yard** with six roads on a
   balloon at its foot, where idle trains wait.
 - Each block's **station** sits on a loop off its spine with **three platforms** side by side under one fast gantry,
-  so three trains are worked at once, and a fourth can wait on the lead in for whichever platform frees first. Trains turn
+  so three trains are worked at once, and a fourth can wait on the lead in for whichever platform frees first. Each
+  assembly block also has an **export station** on the spine at its far side, just for product crates and the trains
+  that collect them, so exports never queue with the block's imports and transfers. Trains turn
   in from either direction, run round the loop and leave either way. Each station has a 30-slot box yard and truck
   bays for the block's movers.
 - The **mine line**, the branch past the container works and the mines, feeds the north trunk from the west.

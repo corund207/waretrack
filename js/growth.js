@@ -61,6 +61,16 @@
     if (b.utility) return null;
     if (!b.depot) { b.depot = 'planned'; ring.precinct(b); return project('Block station', () => new WT.BlockStation(b), { label: `Block ${b.key} station` }); }
     if (!b.movers) { b.movers = 'planned'; b.moverPlot.used = 'planned'; return project('Mover depot', () => (b.movers = new WT.MoverDepot(b.moverPlot)), { label: `Block ${b.key} mover depot` }); }
+    // an assembly block's export station, on the spine at its far side (laid first if need be)
+    if (b.exportPlot && !b.exportDepot && b.depot && b.depot !== 'planned' && b.depot.active) {
+      if (!ring.spineBuilt(b.exportSpine)) {
+        if (spineQueued.has(b.exportSpine)) return null;
+        spineQueued.add(b.exportSpine);
+        return project('Spine', null, { spine: b.exportSpine, label: `Spine ${b.exportSpine + 1} · x ${W.SPINES[b.exportSpine]}` });
+      }
+      b.exportDepot = 'planned';
+      return project('Block station', () => new WT.BlockStation(b, true), { label: `Block ${b.key} export station` });
+    }
     return null;
   }
   const push = (p) => { queue.push(p); return queue[0]; };
@@ -93,7 +103,12 @@
       for (const kind of Object.keys(WT.REMOTE.KINDS)) if (!has(kind)) return push(project(kind, () => new WT.RemoteSite(kind)));
       if (!has('Gas field')) return push(project('Gas field', () => new WT.GasField()));
     }
-    // the port's block on the coast once there is enough industry to feed
+    // every working assembly block gets its export station
+    for (const b of ring.BLOCKS) if (b.exportPlot && !b.exportDepot && b.depot && b.depot !== 'planned' && b.depot.active && b.movers && b.movers !== 'planned') {
+      const q = infra(b);
+      if (q && q !== WAIT) return push(q);
+    }
+        // the port's block on the coast once there is enough industry to feed
     if (plants >= 5 && !has('Port terminal')) {
       const pb = ring.BLOCKS.find((b) => b.port);
       const r = inBlock(pb, () => push(project('Port terminal', () => { const f = new WT.Port(pb.A); f.pod = pb; return f; })));

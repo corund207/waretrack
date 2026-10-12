@@ -421,10 +421,12 @@
   function crateRun() {
     // the fullest centre whose station has room for another crate; a distribution centre sends its crates from its
     // block's station, for the next freight
-    const ok = (w) => { const st = blockOf(w).depot; return w.stock > 30 && WT.RING.serves(w) && w.freeDocks('stuff') && spotsFree(st) > 0 && st.roomFor() >= 3; };
+    // (to the block's export station once it works, so crates never queue with the block's other traffic)
+    const outOf = (w) => { const b = blockOf(w), x = b && b.exportDepot; return x && x.active && x.platforms && x.platforms[0].edge.built ? x : b.depot; };
+    const ok = (w) => { const st = outOf(w); return w.stock > 30 && WT.RING.serves(w) && w.freeDocks('stuff') && spotsFree(st) > 0 && st.roomFor() >= 3; };
     const wh = active('Warehouse').filter(ok).sort((a, b) => b.stock - a.stock)[0];
     if (!wh) return false;
-    const term = blockOf(wh).depot;
+    const term = outOf(wh);
     const c = S.newCrate();
     S.note(c, `Empty crate issued for ${wh.id}`);
     const t = launchMover({ trailer: 'flat', container: c, crateJob: true, mission: `Product crate: ${wh.id} → ${term.id} by rail` }, [{ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true }]);

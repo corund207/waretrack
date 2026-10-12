@@ -362,7 +362,7 @@
       for (const t of act.filter((x) => x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, t.busy && t.busy !== 'incoming' ? 'Vessel in' : 'Open', 'blue', '');
       for (const d of act.filter((x) => x.type === 'Block station')) {
         const boxes = d.slots.reduce((n, q) => n + q.items.length, 0);
-        rows += row(d.uid, d.id, 'Block ' + d.pod.key + ' station', `${boxes} boxes in the yard · ${d.incoming} inbound by rail`, d.train ? d.train.id + ' at the platform' : 'Platform clear', d.train ? 'blue' : 'green', '');
+        rows += row(d.uid, d.id, d.name, `${boxes} boxes in the yard · ${d.incoming} inbound by rail`, d.train ? d.train.id + ' at the platform' : 'Platform clear', d.train ? 'blue' : 'green', '');
       }
       for (const d of act.filter((x) => x.type === 'Container depot')) rows += row(d.uid, d.id, 'Depot', `${d.count()} empties stored`, 'Open', 'green', '');
       for (const d of act.filter((x) => x.type === 'Mover depot')) {
