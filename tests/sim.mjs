@@ -78,7 +78,11 @@ try {
       const rc = [...WT.trains, ...WT.RING.trains].flatMap((t) => t.cars.map((c) => ({ t, p: c.g.position })));
       for (let a = 0; a < rc.length; a++) for (let b = a + 1; b < rc.length; b++) {
         const p = rc[a].p, q = rc[b].p;
-        if (rc[a].t !== rc[b].t && (WT.RING.trains.includes(rc[a].t) || WT.RING.trains.includes(rc[b].t)) && Math.hypot(p.x - q.x, p.z - q.z) < 4.5 && Math.abs(p.y - q.y) < 3) WT.__ringClash = (WT.__ringClash || 0) + 1;
+        if (rc[a].t !== rc[b].t && (WT.RING.trains.includes(rc[a].t) || WT.RING.trains.includes(rc[b].t)) && Math.hypot(p.x - q.x, p.z - q.z) < 4.5 && Math.abs(p.y - q.y) < 3) {
+          WT.__ringClash = (WT.__ringClash || 0) + 1;
+          const d = (t) => t.id + ' "' + t.status + '" ' + (t.route ? t.route.segs.filter((g) => !g.hist && t.s >= g.s0 - 1 && t.s - 13 * t.cars.length <= g.s1).map((g) => g.e.id).join('+') : '');
+          if (!WT.__ringClashAt) WT.__ringClashAt = WT.fmtTime(WT.sim.minutes) + ' @' + Math.round(p.x) + ',' + Math.round(p.z) + ': ' + d(rc[a].t) + ' / ' + d(rc[b].t);
+        }
       }
       // movers never leave their block: every stop of every mover job is in the block its depot serves
       for (const t of WT.trucks) if (t.variant === 'mover' && t.bay) {
@@ -126,6 +130,9 @@ try {
       semiAtTerminal: WT.__semiAtTerminal || [],
       fleet: WT.SUP.fleet(),
       crossBlock: WT.__crossBlock || [],
+      cratesWaiting: facs.filter((f) => f.type === 'Block station').reduce((n, d) => n + d.outbound({ role: 'freight' }).length, 0),
+      dcStock: facs.filter((f) => f.type === 'Warehouse').map((w) => Math.round(w.stock)),
+      trainsRunning: WT.RING.trains.length,
       spines: WT.W.SPINES.filter((x, i) => WT.RING.spineBuilt(i)).length,
       moverWait: WT.SUP.moverWait,
       awaitingMover: WT.SUP.dispatchQ.length,
@@ -133,7 +140,7 @@ try {
       moverDepots: facs.filter((f) => f.type === 'Mover depot').length,
       cratesIssued: WT.SUP.cratesIssued, cratesRailed: WT.SUP.cratesRailed,
       moversDelivered: facs.filter((f) => f.type === 'Mover depot').reduce((n, f) => n + f.delivered, 0),
-      ring: { depots: facs.filter((f) => f.type === 'Block station').length, podPlants: plants.filter((f) => f.pod).length, parkPlants: plants.filter((f) => !f.pod).map((f) => f.id), shuttles: WT.RING.trains.filter((t) => t.role === 'shuttle').length, clash: WT.__ringClash || 0, locks: WT.RING.LOCKS.length, ...WT.RING.stats,
+      ring: { depots: facs.filter((f) => f.type === 'Block station').length, podPlants: plants.filter((f) => f.pod).length, parkPlants: plants.filter((f) => !f.pod).map((f) => f.id), shuttles: WT.RING.trains.filter((t) => t.role === 'shuttle').length, clash: WT.__ringClash || 0, clashAt: WT.__ringClashAt || '', locks: WT.RING.LOCKS.length, ...WT.RING.stats,
         delivered: WT.SUP.orders.filter((o) => o.ring && o.status === 'Delivered').length },
       moverDeliveries: WT.SUP.orders.filter((o) => o.status === 'Delivered' && o.events.some((e) => /^Mover assigned|^Collecting/.test(e.text))).length,
     };
@@ -155,10 +162,11 @@ try {
   check(st.ring.parkPlants.length === 0 && st.ring.podPlants >= 10, `every factory sits in a block on the rail grid (${st.ring.podPlants}${st.ring.parkPlants.length ? ', outside: ' + st.ring.parkPlants.join(', ') : ''})`);
   check(st.ring.depots >= 6 && st.ring.shuttles >= 2 && st.spines >= 3, `rail grid: ${st.spines} spines, ${st.ring.depots} block stations on loops, ${st.ring.shuttles} block shuttles, ${st.ring.locks} signalled conflicts, ${st.ring.stabled} stabling calls`);
   check(st.crossBlock.length === 0, 'movers never leave their block (between blocks everything goes by rail)' + (st.crossBlock.length ? ': ' + [...new Set(st.crossBlock)].slice(0, 3).join(' | ') : ''));
-  check(st.ring.clash === 0, `no two trains ever meet at a junction or crossing (${st.ring.clash} clashes)`);
+  check(st.ring.clash === 0, `no two trains ever meet at a junction or crossing (${st.ring.clash} clashes${st.ring.clashAt ? ': ' + st.ring.clashAt : ''})`);
   check(st.ring.ore > 0 && st.ring.oreBoxes > 0, `${st.ring.ore} ore trains loaded ${st.ring.oreBoxes} boxes at the mines straight for the blocks`);
   check(st.ring.delivered > 0 && st.ring.calls > 10, `${st.ring.delivered} transfers delivered between blocks by rail (${st.ring.moved} boxes off trains, ${st.ring.empties} empties home, ${st.ring.calls} station calls)`);
   check(st.ring.freight > 0 && st.ring.imported > 0, `${st.ring.freight} freight trains brought ${st.ring.imported} import boxes in from the map edge straight to the blocks (${st.ring.exported} crates out)`);
+  console.log(`  ${st.trainsRunning} trains running · ${st.cratesWaiting} product crates waiting at stations · crates waited avg ${(st.ring.crateWait / Math.max(1, st.ring.exported)).toFixed(0)} min, max ${st.ring.crateWaitMax.toFixed(0)} min · distribution centre stock ${st.dcStock.join(' / ')}`);
   check(st.cratesRailed > 0, `${st.cratesRailed} product crates left by rail (${st.cratesIssued} issued to distribution centres)`);
   check(st.moverDepots >= 4 && st.fleet.size > 30, `mover fleet of ${st.fleet.size} in ${st.moverDepots} block depots (${st.moversDelivered} commissioned as work grew, ${st.fleet.out} on jobs)`);
   console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);

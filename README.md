@@ -115,19 +115,26 @@ with full junctions, and every stop on a loop of its own.
 - The **north trunk** and the **middle trunk** (just north of the highway) run the width of the map and off both
   edges, where freight enters and leaves.
 - A **spine** runs north–south between every two columns of blocks: from a T-junction on the north trunk, across the
-  middle trunk at a four-way junction, over the highway on a viaduct, down to a **stabling yard** with four roads on a
+  middle trunk at a four-way junction, over the highway on a viaduct, down to a **stabling yard** with six roads on a
   balloon at its foot, where idle trains wait.
-- Each block's **station** sits on a loop off its spine. Trains turn in from either direction, work the platform
-  under the station's gantry, run round the loop and leave either way. One more train can wait inside the loop while
-  the platform is busy.
+- Each block's **station** sits on a loop off its spine with **three platforms** side by side under one fast gantry,
+  so three trains are worked at once, and a fourth can wait on the lead in for whichever platform frees first. Trains turn
+  in from either direction, run round the loop and leave either way. Each station has a 30-slot box yard and truck
+  bays for the block's movers.
 - The **mine line**, the branch past the container works and the mines, feeds the north trunk from the west.
 
 Junctions are signalled. A train reserves every conflict ahead of it in a junction at once (the merges, diverges and
-crossings it will foul) and releases each as its tail clears it, so trains never meet and never stop inside a
-junction. Signal masts show red while a conflict is held.
+crossings it will foul) and releases each as its tail clears it, and like a chain signal it only enters when there is
+room for the whole train beyond the junction, so trains never meet and never stop inside a junction. Signal masts
+show red while a conflict is held. Trains run at up to 120 km/h on the open line and about 30 km/h through junctions.
 
-- **Block shuttles** carry boxes between blocks: deliveries first, collections on the way.
-- **Freight** brings imports in from the map edge straight to the blocks and takes the product crates away.
+- **Block shuttles** (two per working station) carry boxes between blocks: deliveries first, collections on the way.
+  A shuttle that has just worked a platform waits there a while for the next box instead of heading for the yard.
+- **Freight** (up to eight trains at once) brings imports in from the map edge straight to the blocks and takes the
+  product crates away. Whenever more crates are waiting than the trains already collecting have room for, an
+  **export train** goes out just to collect them, and an idle shuttle can make an export run too.
+- Distribution centres fill each product crate with 22–26 pallets, two at a time per forklift trip, fullest centre
+  first, so finished goods keep moving out.
 - **Ore trains** run up the mine line, collect empties at the container works, load at the mine and run straight to
   the block that ordered the ore.
 

@@ -55,7 +55,7 @@
       this.style = style || WT.pick(['dc', 'dc', 'fulfil', 'bulk']);
       this.name = { dc: 'Distribution Center', cold: 'Cold Storage', fulfil: 'Fulfilment Center', bulk: 'Bulk Warehouse' }[this.style];
       this.product = null;
-      this.stock = WT.rint(600, 1100);
+      this.stock = WT.rint(40, 160); // (a new centre fills from its lines)
       this.capacity = 1800;
       this.fr = new T.Group();
       this.fr.rotation.y = -Math.PI / 2;
@@ -231,22 +231,26 @@
     /* ----- dock door: one pallet in or out of the trailer ----- */
     *dockJob(f, bay) {
       const t = bay.truck, x = bay.x, A = f.actor;
+      if (t.dir === 'out' && t.loaded >= t.total) return; // (doubled pallets: the load may be complete already)
       f.task = (t.dir === 'out' ? 'Loading ' : 'Unloading ') + t.id + ' · door ' + bay.n;
       yield* this.go(f, [[x, DOCK_HOME]], 4);
       yield* WT.turnTo(A, Math.PI / 2, 3.5);
       if (t.dir === 'out') {
-        // pallet picked from the racking inside, driven over the dock leveler into the trailer
+        // pallet picked from the racking inside, driven over the dock leveler into the trailer (two at a time,
+        // double-stacked, into a product crate)
+        const two = !!(t.container && t.container.crate) && t.total - t.loaded >= 2 && this.stock >= 2;
         const p = new WT.Pallet({ status: 'Picked', loc: `${this.id} · Door ${bay.n}` });
         p.placeIn(this.fr, x, DOCK_HOME + FORK_REACH, 0, 0);
-        this.stock--;
+        this.stock -= two ? 2 : 1;
         this.pickUp(f, p);
+        if (two) p.mesh.scale.y = 2;
         yield* this.forks(f, 1.05, 0.5);
         p.status = 'Loading'; p.loc = `${this.id} · Door ${bay.n} · ${t.id}`;
         yield* this.go(f, [[x, DOCK_STAND]], 3);
         this.putDown(f).mesh.position.y = 1.15;
         yield* this.slide(p, 0, 2.2, 0.6, true);
         p.dispose();
-        t.loaded++;
+        t.loaded += two ? 2 : 1;
         yield* this.back(f, [[x, DOCK_HOME]], 3);
         yield* this.forks(f, 0.1, 0.4);
       } else {
@@ -365,7 +369,7 @@
       const bay = leg.dock;
       bay.truck = t;
       t.dir = leg.op === 'unload' ? 'in' : 'out';
-      t.total = WT.rint(4, 7);
+      t.total = leg.op === 'stuff' ? WT.rint(22, 26) : WT.rint(4, 7); // (a product crate goes out full)
       t.loaded = 0;
       t.status = leg.op === 'stuff' ? 'Stuffing' : t.dir === 'out' ? 'Loading' : 'Unloading';
       if (leg.op === 'stuff' && t.container) { t.container.status = 'Stuffing'; t.container.loc = this.id; WT.SUP.note(t.container, `Stuffing at ${this.id}`); }

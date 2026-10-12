@@ -201,7 +201,7 @@
   function mrp() {
     for (const f of S.plants()) for (const m of f.recipe.in) {
       // primary plants sit at the end of long ocean / rail / mine lead times, so they keep more orders in flight
-      if (S.openCount(f, m) >= (f.intermediate ? 8 : 4)) continue;
+      if (S.openCount(f, m) >= (f.intermediate ? 10 : 6)) continue;
       if (f.stock[m] + S.onOrder(f, m) + S.MAT[m].size <= f.cap) S.place(f, m); // waits while no carrier runs yet
     }
   }
@@ -253,7 +253,7 @@
     // product crates only borrow movers beyond the reserve: waiting containers are mostly held up by full plant bays,
     // not by a lack of movers, so the reserve alone keeps factory supply first
     const size = bays().filter((b) => blockOf(b.depot) === blk && (b.state === 'home' || b.state === 'out')).length;
-    if (o.crateJob && (home.length <= reserveN(size) + 1 || WT.trucks.filter((t) => t.container && t.container.crate).length >= 3)) return null;
+    if (o.crateJob && (home.length <= reserveN(size) || WT.trucks.filter((t) => t.container && t.container.crate).length >= 16)) return null;
     if (o.background && !o.crateJob && (S.dispatchQ.length + S.internalQ.length > 0 || home.length <= reserveN(size))) return null;
     const d2 = (b) => { const [x, z] = b.depot.worldOf(b); return (x - tx) ** 2 + (z - tz) ** 2; };
     const bay = home.reduce((a, b) => (d2(b) < d2(a) ? b : a));
@@ -419,11 +419,12 @@
   // with pallets, and it is dropped in a rail yard for the next freight call. Runs on its own clock (not the
   // background-plan lottery) but only on spare movers, and never more than three crates on the road at once.
   function crateRun() {
-    const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80 && WT.RING.serves(w)), 'stuff');
+    // the fullest centre whose station has room for another crate; a distribution centre sends its crates from its
+    // block's station, for the next freight
+    const ok = (w) => { const st = blockOf(w).depot; return w.stock > 30 && WT.RING.serves(w) && w.freeDocks('stuff') && spotsFree(st) > 0 && st.roomFor() >= 3; };
+    const wh = active('Warehouse').filter(ok).sort((a, b) => b.stock - a.stock)[0];
     if (!wh) return false;
-    // a distribution centre sends its crates from its block's station, for the next freight
     const term = blockOf(wh).depot;
-    if (spotsFree(term) < 1 || term.roomFor() < 3) return false;
     const c = S.newCrate();
     S.note(c, `Empty crate issued for ${wh.id}`);
     const t = launchMover({ trailer: 'flat', container: c, crateJob: true, mission: `Product crate: ${wh.id} → ${term.id} by rail` }, [{ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true }]);
@@ -464,7 +465,7 @@
         fleetT += 0.4;
         if (fleetT > 3) { fleetT = 0; planFleet(); }
         crateT += 0.4;
-        if (crateT > 30 && WT.TR.jam < 0.3) { crateT = 0; crateRun(); }
+        if (crateT > 2 && WT.TR.jam < 0.3) { crateT = 0; if (crateRun()) crateRun(); }
         // purchase orders always take priority over everything else, but dispatch meters
         // trucks onto the network when the roads are congested
         const jam = WT.TR.jam;
