@@ -13,7 +13,7 @@
     ore: { name: 'Copper ore', size: 20, modes: ['sea', 'rail'], pack: 'container', item: 'ore', colors: [0xb87333, 0xa0683a, 0x8a90ad] },
     sand: { name: 'Silica sand', size: 20, modes: ['rail'], pack: 'container', item: 'ore', colors: [0xe8d6a8, 0xd9c48f, 0xf0e2bd] },
     fabric: { name: 'Textiles', size: 16, modes: ['sea', 'rail'], pack: 'container', item: 'carton', colors: [0xc8a2ff, 0xff8fb1, 0xa3acc9] },
-    comp: { name: 'Electronic components', size: 10, modes: ['air', 'sea'], pack: 'uld', item: 'carton', colors: [0x7c9cff, 0x9fb4ff, 0xd9ad74] },
+    comp: { name: 'Electronic components', size: 10, modes: ['sea', 'rail'], pack: 'container', item: 'carton', colors: [0x7c9cff, 0x9fb4ff, 0xd9ad74] },
     timber: { name: 'Timber logs', size: 18, modes: ['rail'], pack: 'container', item: 'log', colors: [0xa0754e, 0xb58a5d, 0x8f6644] },
     chem: { name: 'Chemicals', size: 20, modes: ['pipe', 'rail'], pack: 'tanker' },
     syrup: { name: 'Syrup concentrate', size: 20, modes: ['rail'], pack: 'tanker' },
@@ -24,11 +24,11 @@
     lumber: { name: 'Lumber', size: 18, modes: ['internal', 'rail'], pack: 'container', item: 'plank', colors: [0xdcb47e, 0xe2c79b] },
     glass: { name: 'Float glass', size: 16, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'carton', colors: [0xbfe3f2, 0xd6eef7, 0xa9d6ea] },
     // tier 2 · components: made in the component district from refined stock (imported until the park makes its own)
-    wire: { name: 'Copper wire', size: 14, modes: ['internal', 'sea'], pack: 'container', item: 'can', colors: [0xc87533, 0xb86a2c] },
-    motors: { name: 'Electric motors', size: 10, modes: ['internal', 'sea'], pack: 'container', item: 'can', colors: [0x4a5578, 0x3a4166, 0xc87533] },
-    boards: { name: 'Circuit boards', size: 8, modes: ['internal', 'sea'], pack: 'container', item: 'carton', colors: [0x37b26c, 0x2f8f57, 0x2a6e47] },
+    wire: { name: 'Copper wire', size: 14, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'can', colors: [0xc87533, 0xb86a2c] },
+    motors: { name: 'Electric motors', size: 10, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'can', colors: [0x4a5578, 0x3a4166, 0xc87533] },
+    boards: { name: 'Circuit boards', size: 8, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'carton', colors: [0x37b26c, 0x2f8f57, 0x2a6e47] },
     panels: { name: 'Body panels', size: 14, modes: ['internal', 'rail'], pack: 'container', item: 'plank', colors: [0xd9dde8, 0x9aa1c4, 0xc3c9d9] },
-    housings: { name: 'Plastic housings', size: 12, modes: ['internal', 'sea'], pack: 'container', item: 'carton', colors: [0xf6f7fd, 0x3a3f52, 0x2f56e0] },
+    housings: { name: 'Plastic housings', size: 12, modes: ['internal', 'sea', 'rail'], pack: 'container', item: 'carton', colors: [0xf6f7fd, 0x3a3f52, 0x2f56e0] },
     frames: { name: 'Furniture frames', size: 14, modes: ['internal', 'rail'], pack: 'container', item: 'plank', colors: [0xb98b55, 0xa0754e] },
     // hinterland materials: mined, quarried and grown at remote sites and railed in; propane by pipeline
     coal: { name: 'Coal', size: 24, modes: ['rail'], pack: 'container', item: 'ore', colors: [0x2b2f3d, 0x3a3f52, 0x22263d] },
@@ -139,18 +139,16 @@
     // a trunk carrier (rail / sea / air / pipeline) or a park plant supplies each material; null while
     // none of them is running yet (nothing is ever trucked in from outside)
     const ms = S.MAT[m].modes;
-    const rail = active('Rail terminal').length > 0 && WT.W.railBuilt;
+    const rail = WT.RING.built; // freight runs in from the portals at the map edge once the trunks are down
     // 1. hinterland materials are railed in from their own remote site once it is producing
     if (rail && WT.REMOTE && WT.REMOTE.siteFor(m)) return 'rail';
     // 2. what the park makes itself moves by in-park transfer
     if (ms.includes('internal') && S.producers(m).length) return 'internal';
     // 3. pipeline products stay on the pipe once the gas field is connected
     if (ms.includes('pipe') && active('Gas field').length) return 'pipe';
-    // 4. air freight needs a cargo terminal and at least one stand
-    if (ms.includes('air') && active('Air terminal').length && active('Stand').length) return 'air';
-    // 5. ocean / inland freight: book whichever of sea and rail has the shorter queue per terminal
-    const byRail = rail && ms.includes('rail'), bySea = ms.includes('sea') && active('Port terminal').length > 0;
-    if (byRail && bySea) return S.backlog.sea.length / active('Port terminal').length <= S.backlog.rail.length / active('Rail terminal').length ? 'sea' : 'rail';
+    // 4. ocean / inland freight: book whichever of sea and rail has the shorter queue
+    const byRail = rail && ms.includes('rail'), bySea = ms.includes('sea') && active('Port terminal').length > 0 && WT.RING.serves(active('Port terminal')[0]);
+    if (byRail && bySea) return S.backlog.sea.length <= S.backlog.rail.length ? 'sea' : 'rail';
     if (byRail) return 'rail';
     if (bySea) return 'sea';
     return null;
@@ -209,7 +207,8 @@
   }
 
   /* ---------- trucks ---------- */
-  const terminals = () => [...active('Rail terminal'), ...active('Port terminal')];
+  const terminals = () => active('Port terminal');
+  const blockOf = (f) => WT.RING.blockOf(f);
   // crane spots not taken or promised: every visit to a crane terminal is counted against its spots when it is
   // dispatched, so a vehicle never reaches the gate to find the yard full and queue out on the avenue (where it would
   // block the exit lane the vehicles inside need to leave by). A yard with its own staging lane may book that too.
@@ -246,12 +245,16 @@
   const reserveN = (size) => Math.max(2, Math.ceil(size / 8));
   function launchMover(o, legs) {
     const [tx, tz] = legs[0].fac.center();
-    const home = bays().filter((b) => b.state === 'home');
-    if (!home.length) { S.moverShortT = WT.sim.minutes; return null; }
+    // a mover never leaves its block: the job goes to a mover based in the block of its first stop
+    const blk = blockOf(legs[0].fac);
+    if (legs.some((l) => blockOf(l.fac) !== blk)) return null;
+    const home = bays().filter((b) => b.state === 'home' && blockOf(b.depot) === blk);
+    if (!home.length) { S.moverShortT = WT.sim.minutes; if (blk) blk.moverShortT = WT.sim.minutes; return null; }
     // product crates only borrow movers beyond the reserve: waiting containers are mostly held up by full plant bays,
     // not by a lack of movers, so the reserve alone keeps factory supply first
-    if (o.crateJob && (home.length <= reserveN(S.fleet().size) + 1 || WT.trucks.filter((t) => t.container && t.container.crate).length >= 3)) return null;
-    if (o.background && !o.crateJob && (S.dispatchQ.length + S.internalQ.length > 0 || home.length <= reserveN(S.fleet().size))) return null;
+    const size = bays().filter((b) => blockOf(b.depot) === blk && (b.state === 'home' || b.state === 'out')).length;
+    if (o.crateJob && (home.length <= reserveN(size) + 1 || WT.trucks.filter((t) => t.container && t.container.crate).length >= 3)) return null;
+    if (o.background && !o.crateJob && (S.dispatchQ.length + S.internalQ.length > 0 || home.length <= reserveN(size))) return null;
     const d2 = (b) => { const [x, z] = b.depot.worldOf(b); return (x - tx) ** 2 + (z - tz) ** 2; };
     const bay = home.reduce((a, b) => (d2(b) < d2(a) ? b : a));
     bay.state = 'out';
@@ -278,6 +281,7 @@
     for (let i = 0; i < S.dispatchQ.length; i++) {
       const po = S.dispatchQ[i], u = po.unit, at = u && u.at;
       if (!open(po) || !po.to.active || !at || u.kind === 'uld' || !at.reserveFor || spotsFree(po.to, 'unload') < 1 || spotsFree(at) < 1) continue;
+      if (blockOf(at) !== blockOf(t.bay.depot) || blockOf(po.to) !== blockOf(at)) continue; // (its own block only)
       const pick = { fac: at, op: 'pick', cont: u, lazy: true };
       S.dispatchQ.splice(i, 1);
       po.to.lazyN = (po.to.lazyN || 0) + 1; at.lazyN = (at.lazyN || 0) + 1;
@@ -294,23 +298,15 @@
   S.needMoverDepot = false;
   const MOVER_COST = 120e3;
   function planFleet() {
-    // congested roads are not a mover shortage: more movers would only lengthen the queues
-    if (!active('Mover depot').length || WT.TR.jam > 0.2) return;
-    const f = S.fleet(), reserve = reserveN(f.size), waiting = S.dispatchQ.length + S.internalQ.length;
-    const short = WT.sim.minutes - S.moverShortT < 8 || f.home < reserve;
-    const free = bays().filter((b) => b.state === 'empty');
-    if (short && free.length <= 4) S.needMoverDepot = true;
-    if (!short) return;
-    let want = Math.max(1, waiting) + reserve - f.home - f.incoming;
-    // one lowloader at a time, at most two on the road
-    want = Math.min(want, 1, free.length, 2 - f.incoming);
-    for (const b of free.slice(0, Math.max(0, want))) {
-      if (WT.G && WT.G.money < MOVER_COST) return;
-      const t = launch({ variant: 'flat', trailer: 'flat', carrier: HAULER, mission: 'Fleet delivery' }, [{ fac: b.depot, op: 'deliver', dock: b.del }]);
-      if (!t) return;
-      b.depot.loadHauler(t, b);
+    if (WT.TR.jam > 0.2) return;
+    for (const d of active('Mover depot')) {
+      const blk = blockOf(d), home = d.bays.filter((b) => b.state === 'home').length, size = d.fleet();
+      const short = (blk && WT.sim.minutes - (blk.moverShortT || -1e9) < 8) || home < reserveN(size);
+      const free = d.bays.find((b) => b.state === 'empty');
+      if (!short || !free || (WT.G && WT.G.money < MOVER_COST)) continue;
+      d.commission(free);
       if (WT.G) WT.G.money -= MOVER_COST;
-      WT.log(`🚛 New mover ${t.newUnit.id} ordered for ${b.depot.id} · on a ${HAULER.name} lowloader`, 'info');
+      return;
     }
   }
 
@@ -326,37 +322,14 @@
       return null;
     }
     if (!t.container || t.container.full) return null;
-    // a ring box goes back to the pod depot it was collected from, and from there home by shuttle
-    const rc = t.container;
-    if (rc.ringHome) {
-      const d = t.home && t.home.type === 'Ring depot' && t.home.active ? t.home : rc.ringHome.active ? rc.ringHome : null;
-      if (d && spotsFree(d) > 0 && d.roomFor() > 0) { d.pendingDrop++; d.lazyN = (d.lazyN || 0) + 1; t.mission = `Return empty ${rc.id} → ${d.id}`; return [{ fac: d, op: 'drop', lazy: true }]; }
-    }
-    // a box that came to a pod by rail goes back to that pod's depot, into its pool (not across the map to the park)
-    const hd = t.home && t.home.type === 'Ring depot' && t.home.active ? t.home : null;
-    if (hd && spotsFree(hd) > 0 && hd.roomFor() > 2) { hd.pendingDrop++; hd.lazyN = (hd.lazyN || 0) + 1; t.mission = `Return empty ${rc.id} → ${hd.id}`; return [{ fac: hd, op: 'drop', lazy: true }]; }
-    const open = t.container.open || t.container.tank; // open frames and tanks can't be stuffed with export pallets
-    const term = terminals().filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 1);
-    // a mover takes its empty straight back to the yard it came from
-    if (t.variant === 'mover' && term.includes(t.home)) {
+    const rc = t.container, blk = t.bay && blockOf(t.bay.depot);
+    const local = (f) => f && f.active && blockOf(f) === blk;
+    const st = (rc.ringHome && local(rc.ringHome) && rc.ringHome) || (t.home && t.home.type === 'Block station' && local(t.home) && t.home) || (blk && local(blk.depot) && blk.depot);
+    if (t.home && t.home.type === 'Port terminal' && local(t.home) && spotsFree(t.home) > 0 && t.home.stackRoom() - t.home.pendingDrop > 1) {
       const tm = t.home; tm.pendingDrop++; tm.lazyN = (tm.lazyN || 0) + 1; t.mission = 'Return empty → ' + tm.id;
       return [{ fac: tm, op: 'drop', lazy: true }];
     }
-    const whs = active('Warehouse').filter((w) => w.stock > 60 && w.freeDocks('stuff'));
-    if (!open && term.length && whs.length && Math.random() < 0.7) {
-      const wh = WT.pick(whs), tm = WT.pick(term);
-      const d1 = wh.reserve('stuff');
-      if (d1) {
-        tm.pendingDrop++; tm.lazyN = (tm.lazyN || 0) + 1;
-        t.mission = 'Street-turn: stuff at ' + wh.id + ' → export via ' + tm.id;
-        return [{ fac: wh, op: 'stuff', dock: d1 }, { fac: tm, op: 'drop', lazy: true }];
-      }
-    }
-    // every depot visit is an appointment taken at its gate, so nobody holds the RTG lane from outside
-    const dep = active('Container depot').filter((f) => f.room() > 1 && (f.lazyN || 0) < 4);
-    if (dep.length) { const d = WT.pick(dep); d.lazyN = (d.lazyN || 0) + 1; t.mission = 'Return empty → ' + d.id; return [{ fac: d, op: 'drop-empty', lazy: true }]; }
-    if (active('Container depot').length) return null; // depot full right now: head out, the box goes back via the interstate
-    if (term.length) { const tm = WT.pick(term); tm.pendingDrop++; tm.lazyN = (tm.lazyN || 0) + 1; t.mission = 'Reposition empty → ' + tm.id; return [{ fac: tm, op: 'drop', lazy: true }]; }
+    if (st && spotsFree(st) > 0 && st.roomFor() > 0) { st.pendingDrop++; st.lazyN = (st.lazyN || 0) + 1; t.mission = `Return empty ${rc.id} → ${st.id}`; return [{ fac: st, op: 'drop', lazy: true }]; }
     return null;
   };
 
@@ -367,6 +340,7 @@
     const u = po.unit, at = u && u.at;
     if (!at || spotsFree(po.to, 'unload') < 1) return false;
     const uld = u.kind === 'uld';
+    if (blockOf(at) !== blockOf(po.to)) return portToRail(po, u, at);
     // crane spots are gate appointments, first come first served: a mover never holds a spot from across the park
     // while the vehicles queued at the gate ahead of it wait for one
     // (the air terminal's ULD docks work the same way, booked on dispatch and taken from its ULD staging lane)
@@ -379,13 +353,27 @@
     S.ev(po, `Mover assigned · ${t.id} from ${t.bay.depot.id} → ${at.id}`);
     return true;
   }
-  // in-park transfer: a mover is loaded at the producer's shipping bay and drives through to the consumer
+  function portToRail(po, u, at) {
+    const ring = WT.RING.route(at, po.to);
+    if (!ring || spotsFree(at) < 1 || spotsFree(ring.from) < 1 || ring.from.roomFor() < 2 || ring.to.roomFor() < 2) return false;
+    const t = launchMover({ trailer: 'flat', home: at, mission: `Container ${u.id}: ${at.id} → ${ring.from.id} for rail to ${ring.to.id}` },
+      [{ fac: at, op: 'pick', cont: u, lazy: true }, { fac: ring.from, op: 'drop', lazy: true }]);
+    if (!t) return false;
+    ring.from.pendingDrop++; ring.to.incoming++;
+    po.ring = ring;
+    t.po = po; t.cargo = { mat: po.mat, qty: po.qty };
+    po.vehicle = t; waited(po);
+    S.ev(po, `Mover assigned · ${t.id} → ${ring.from.id}, then by rail to ${ring.to.id}`);
+    return true;
+  }
+  // in-block transfer: a mover is loaded at the producer's shipping bay and drives through to the consumer
   function transfer(po) {
     if (!open(po)) return true;
     let p = po.from;
     if (!p || !p.active) { const ps = S.producers(po.mat); if (!ps.length) { S.cancel(po, 'producing plant closed'); return true; } p = po.from = ps[0]; }
     const ring = WT.RING.route(p, po.to);
     if (ring) return ringOut(po, p, ring);
+    if (blockOf(p) !== blockOf(po.to)) { S.ev(po, `In production · ${p.id} · awaiting rail between blocks`); return false; }
     if (p.outStock < po.qty || !p.freeDocks('ship') || spotsFree(po.to, 'unload') < 1) { if (p.outStock < po.qty) S.ev(po, `In production · ${p.id}`); return false; }
     const tank = S.MAT[po.mat].pack === 'tanker';
     const t = launchMover({ trailer: tank ? 'tanker' : 'stake', home: p, mission: `Transfer ${po.id}: ${p.id} → ${po.to.id}` },
@@ -431,15 +419,11 @@
   // with pallets, and it is dropped in a rail yard for the next freight call. Runs on its own clock (not the
   // background-plan lottery) but only on spare movers, and never more than three crates on the road at once.
   function crateRun() {
-    const yards = active('Rail terminal').filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 2 && f.exportCount() < 10);
-    const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80), 'stuff');
+    const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80 && WT.RING.serves(w)), 'stuff');
     if (!wh) return false;
-    // a pod's distribution centre sends its crates from the pod's own rail depot, for industrial freight
-    const pd = WT.RING.serves(wh) && wh.pod.depot;
-    if (pd && (spotsFree(pd) < 1 || pd.roomFor() < 3)) return false;
-    if (!pd && !yards.length) return false;
-    const [wx, wz] = wh.center();
-    const term = pd || yards.reduce((a, b) => (Math.hypot(b.center()[0] - wx, b.center()[1] - wz) < Math.hypot(a.center()[0] - wx, a.center()[1] - wz) ? b : a));
+    // a distribution centre sends its crates from its block's station, for the next freight
+    const term = blockOf(wh).depot;
+    if (spotsFree(term) < 1 || term.roomFor() < 3) return false;
     const c = S.newCrate();
     S.note(c, `Empty crate issued for ${wh.id}`);
     const t = launchMover({ trailer: 'flat', container: c, crateJob: true, mission: `Product crate: ${wh.id} → ${term.id} by rail` }, [{ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true }]);
@@ -450,88 +434,20 @@
   }
 
   /* ---------- non-PO flows: distribution, exports, empties ---------- */
-  const PLANS = [
-    {
-      w: 5, go() {
-        const wh = firstFree(active('Warehouse').filter((w) => w.stock > 20), 'load');
-        if (!wh) return false;
-        const t = launch({ variant: 'box', trailer: wh.style === 'cold' ? 'reefer' : WT.pick(['box', 'box', 'curtain']), carrier: carrier(), mission: 'Customer delivery · ' + (wh.product || 'mixed goods') }, [{ fac: wh, op: 'load' }]);
-        if (t) { t.shipment = WT.createShipment({ mode: 'truck', to: WT.pick(WT.CITIES), carrier: t.carrier.name, vehicle: t, total: 6 }); WT.advanceShipment(t.shipment, 1); }
-        return !!t;
-      },
-    },
-    {
-      w: 1, go() {
-        const wh = firstFree(active('Warehouse'), 'unload');
-        return wh ? !!launch({ variant: 'box', trailer: wh.style === 'cold' ? 'reefer' : 'box', carrier: carrier(), mission: 'Customer returns' }, [{ fac: wh, op: 'unload' }]) : false;
-      },
-    },
-    {
-      w: 3, go() {
-        const at = active('Air terminal')[0];
-        const wh = firstFree(active('Warehouse').filter((w) => w.stock > 30), 'load');
-        if (!at || !wh || !at.freeDocks('air-drop')) return false;
-        const t = launch({ variant: 'box', trailer: 'curtain', carrier: carrier(), mission: 'Air export · ' + wh.id + ' → ' + at.id }, [{ fac: wh, op: 'load' }, { fac: at, op: 'air-drop' }]);
-        if (t) { t.shipment = WT.createShipment({ mode: 'truck', to: 'Skyport Cargo', carrier: t.carrier.name, vehicle: t, total: 6 }); WT.advanceShipment(t.shipment, 1); }
-        return !!t;
-      },
-    },
-    {
-      w: 3, go() {
-        const tm = terminals().filter((f) => spotsFree(f) > 0 && f.stackRoom() - f.pendingDrop > 2 && f.exportCount() < 10);
-        const wh = firstFree(active('Warehouse').filter((w) => w.stock > 80), 'stuff');
-        if (!tm.length || !wh) return false;
-        // by sea in a shipping line's box from the depot (rail exports go in the park's own product crates: crateRun)
-        const sea = tm.filter((f) => f.type !== 'Rail terminal');
-        if (!sea.length) return false;
-        const term = WT.pick(sea);
-        const legs = [];
-        let c = null;
-        const dep = active('Container depot').filter((d) => d.count() > 2 && (d.lazyN || 0) < 3);
-        if (dep.length) legs.push({ fac: WT.pick(dep), op: 'pick-empty', lazy: true });
-        else { c = S.newContainer(11); S.note(c, 'Empty released from the shipping-line pool'); }
-        legs.push({ fac: wh, op: 'stuff' }, { fac: term, op: 'drop', lazy: true });
-        const t = launchMover({ trailer: 'flat', container: c, background: true, mission: `Export: ${wh.id} → ${term.id}` }, legs);
-        if (t) term.pendingDrop++;
-        else if (c) WT.unregister(c);
-        return !!t;
-      },
-    },
-    {
-      // a nearly full depot sends surplus empties back to the shipping lines off-site, keeping room for the terminals
-      w: 3, go() {
-        const dep = active('Container depot').filter((d) => d.room() < 20 && (d.lazyN || 0) < 3);
-        if (!dep.length) return false;
-        const d = WT.pick(dep);
-        // with an off-site empty yard, surplus goes to a rail yard for the repositioning train
-        const xy = active('Off-site empty yard').length && active('Rail terminal').filter((t) => t.stackRoom() > 6 && spotsFree(t) > 0);
-        if (xy && xy.length) {
-          const tm = xy.reduce((a, b) => (Math.abs(b.A - d.plot.A) < Math.abs(a.A - d.plot.A) ? b : a));
-          tm.pendingDrop++;
-          const t = launchMover({ trailer: 'flat', background: true, mission: `Empty for rail: ${d.id} → ${tm.id}` }, [{ fac: d, op: 'pick-empty', lazy: true }, { fac: tm, op: 'drop', lazy: true }]);
-          if (!t) tm.pendingDrop--;
-          return !!t;
-        }
-        return !!launch({ variant: 'flat', carrier: carrier(), spawnX: near(d.plot.A), mission: `Empty return: ${d.id} → shipping line` }, [{ fac: d, op: 'pick-empty', lazy: true }]);
-      },
-    },
-  ];
+  const PLANS = [];
 
   // empties left at a port or rail yard are taken by mover to the empty-container depot (they never ride a train or ship);
   // runs on its own clock so terminals are cleared even when the roads are too busy for optional work
+  // empties piling up at the port go to the port block's station pool (from there out by rail with the freight)
   function evacuateEmpty() {
-    const dep = active('Container depot').filter((d) => d.room() > 2 && (d.lazyN || 0) < 5);
-    if (!dep.length) return false;
-    const byRail = active('Off-site empty yard').length > 0;
-    const terms = terminals().filter((f) => spotsFree(f) > 0 && f.emptyOnTop && f.emptyOnTop() && !(byRail && f.type === 'Rail terminal')).sort((a, b) => b.emptyCount() - a.emptyCount());
-    const term = terms[0];
-    if (!term) return false;
-    const c = term.emptyOnTop();
+    const port = active('Port terminal')[0], st = port && port.pod && port.pod.depot;
+    if (!port || !st || !st.active || spotsFree(port) < 1 || spotsFree(st) < 1 || st.roomFor() < 3 || !port.emptyOnTop()) return false;
+    const c = port.emptyOnTop();
     c.reserved = true;
-    const d = dep.reduce((a, b) => (Math.abs(b.plot.A - term.A) < Math.abs(a.plot.A - term.A) ? b : a));
-    const t = launchMover({ trailer: 'flat', mission: `Empty ${c.id}: ${term.id} → ${d.id}` }, [{ fac: term, op: 'pick', cont: c, lazy: true }, { fac: d, op: 'drop-empty', lazy: true }]);
+    const t = launchMover({ trailer: 'flat', mission: `Empty ${c.id}: ${port.id} → ${st.id}` }, [{ fac: port, op: 'pick', cont: c, lazy: true }, { fac: st, op: 'drop', lazy: true }]);
     if (!t) { c.reserved = false; return false; }
-    WT.SUP.note(c, `Empty collected for ${d.id}`);
+    st.pendingDrop++;
+    WT.SUP.note(c, `Empty collected for ${st.id}`);
     return true;
   }
 

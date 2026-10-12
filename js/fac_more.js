@@ -314,16 +314,23 @@
     }
     activate() {
       super.activate();
-      // the first depot is commissioned with a full fleet, a mover on every charger; later ones open with a starter
-      // fleet and the supply planner fills their bays by lowloader as the work grows
-      const first = !WT.facilities.some((f) => f !== this && f.type === 'Mover depot' && f.active);
-      for (const b of this.bays.slice(0, first ? this.bays.length : 8)) this.park(b, { id: WT.nextMoverId(), jobs: 0 }, this.parkedMesh());
+      // every block's depot opens with a starter fleet; the supply planner commissions more as its block's work grows
+      for (const b of this.bays.slice(0, 8)) this.park(b, { id: WT.nextMoverId(), jobs: 0 }, this.parkedMesh());
     }
     parkedMesh() { return M.mover({ deck: 'flat', color: WT.SUP.MOVERS.cab }); }
     park(b, unit, mesh) {
       this.group.add(mesh);
       mesh.position.set(b.x, 0, b.z); mesh.rotation.set(0, Math.PI / 2, 0);
       b.mesh = mesh; b.unit = unit; b.state = 'home';
+    }
+    // a new mover commissioned on an empty charger (built for the block on site: nothing drives in from outside)
+    commission(b) {
+      this.park(b, { id: WT.nextMoverId(), jobs: 0 }, this.parkedMesh());
+      this.delivered++;
+      const m = b.mesh;
+      m.scale.setScalar(0.01);
+      WT.spawn(WT.tween(1.2, (k) => m.scale.setScalar(Math.max(0.01, WT.ease(k)))));
+      WT.log(`🤖 ${b.unit.id} commissioned at ${this.id} · ${this.fleet()} movers in this block`, 'green');
     }
     // a lowloader is booked for an empty bay: the new mover rides on its deck
     loadHauler(t, b) {
@@ -373,8 +380,8 @@
       const n = (s) => this.bays.filter((b) => b.state === s).length;
       return this.cardBase({ kicker: 'Facility · Mover depot', icon: '🤖', sub: 'Autonomous container mover fleet', where: this.fleet() + ' movers based here',
         bars: [{ label: 'Bays in use', val: this.bays.length - n('empty'), max: this.bays.length }],
-        rows: [['Charging', String(n('home'))], ['On jobs', String(n('out'))], ['Arriving by lowloader', String(n('incoming'))], ['Free bays', String(n('empty'))],
-          ['Movers delivered', String(this.delivered)], ['Jobs completed', WT.fmtNum(this.moves)]] });
+        rows: [['Charging', String(n('home'))], ['On jobs', String(n('out'))], ['Free bays', String(n('empty'))],
+          ['Movers commissioned', String(this.delivered)], ['Jobs completed', WT.fmtNum(this.moves)]] });
     }
   }
 

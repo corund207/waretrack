@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A logistics park that builds and runs itself. Sit back and watch.</b><br/>
-  Road, rail, sea and air freight feeding a live, multi-stage supply chain, rendered as a lifelike 3D world in the browser.
+  A whole map laid out around a rail grid, feeding a live, multi-stage supply chain, rendered as a lifelike 3D world in the browser.
 </p>
 
 <p align="center">
@@ -26,10 +26,12 @@
 
 ![WareTrack: a fully grown logistics park](docs/screenshots/02-overview.png)
 
-It starts as empty land with a highway and a forest. A director AI earns capital, plans projects and builds the
-park itself: roads get paved, trees cleared, tower cranes go up, mixer trucks pour concrete, and buildings rise floor
-by floor. Each new facility then joins a fully simulated supply chain, where every container, ULD and tanker load is
-a real object you can click and follow from the ship, train or plane all the way to the factory dock.
+It starts as empty land with a highway, a forest and a coast. A director AI earns capital, plans projects and builds
+everything itself, and the first thing it builds is track: two double-track trunks across the whole map. Every block
+of the map then opens around the rail grid: a spine is laid past it, its station loop goes in, and only then its
+plants, distribution centres and utilities, with tower cranes, mixer trucks and buildings rising floor by floor. Each
+facility joins a fully simulated supply chain, where every container and tanker load is a real object you can click and
+follow from the ship, the mine or the map edge all the way to the factory dock.
 
 No build step and no framework: plain JavaScript and [three.js](https://threejs.org), served as static files.
 
@@ -38,8 +40,8 @@ No build step and no framework: plain JavaScript and [three.js](https://threejs.
 | | |
 |---|---|
 | ![Founding day](docs/screenshots/01-founding.png) **Day one.** Bare land, the first plot being paved and built. | ![Factory docks](docs/screenshots/03-factory-docks.png) **Factory receiving.** Raw material arrives at the dock and belts feed the process line. |
-| ![Seaport](docs/screenshots/04-seaport.png) **Seaport.** STS cranes discharge the exact containers each purchase order was booked on. | ![Rail terminal](docs/screenshots/05-rail-terminal.png) **Rail terminal.** The gantry grounds boxes and loads them onto container movers. |
-| ![Air cargo](docs/screenshots/06-air-cargo.png) **Air cargo.** Freighters turn around at the stands, and ULDs are tugged to the landside rack. | ![Supply chain](docs/screenshots/07-supply-chain.png) **Supply panel.** Live plant stockpiles, terminals, depot and road dispatch state. |
+| ![Seaport](docs/screenshots/04-seaport.png) **Seaport.** STS cranes discharge the exact containers each purchase order was booked on. | ![Rail grid](docs/screenshots/05-rail-grid.png) **Rail grid.** A spine crossing the middle trunk at a full junction, signals at every conflict. |
+| ![Block station](docs/screenshots/06-block-station.png) **Block station.** A shuttle at the platform under the gantry, movers at the truck bays. | ![Supply chain](docs/screenshots/07-supply-chain.png) **Supply panel.** Live plant stockpiles, stations, movers and freight bookings. |
 | ![Truck detail](docs/screenshots/08-truck-card.png) **Everything is clickable.** A vehicle with its order, container and traffic state. | ![Cinema mode](docs/screenshots/09-cinema.png) **Cinema mode.** An autonomous camera director with the dashboard hidden. |
 
 ## Run it locally
@@ -57,19 +59,19 @@ shows which build you are looking at (deployed builds also show the commit hash)
 
 | Phase | What appears |
 |------|--------------|
-| Founded | Avenue paved, first **warehouse** with dock bays, apron and yard forklifts, and pallet slots |
-| Manufacturing | **Factories** in three tiers (refining → components → final assembly), every kind with a building design of its own (blast furnace and coke ovens, potline, distillation columns, clean room, high-bay press hall, test cells…). Every plant grows in an **industrial pod** west of the park with its own rail depot, joined by a double-track trunk and spine with a station loop for each depot; final assembly belts its cartons into a distribution centre next door |
-| Rail freight | A track-laying train builds the double-track **mainline**. **Rail terminals** get two sidings, so two trains are worked at once, three gantry cranes over a 34-slot stack and five truck spots. A freight call goes out for every free siding with cargo booked, mine trains run whenever the container works can load one, and through freight keeps to the westbound main. Besides a yard on each park avenue (except the airfield's), one more yard opens out along the mainline at 1320, paving its own access avenue (the west belongs to the industrial pods) |
-| Seaport | **Port terminals** with ship-to-shore cranes. Feeder vessels berth, unload and load, and cargo ships pass offshore |
-| Air cargo | **Airfield**, cargo terminal with landside belt docks, 4 stands with ULD tugs, and a control tower. Freighters fly in over the park, land, turn around and take off |
-| Mega hub | Power plants with steaming cooling towers and pylon lines, **container depots**, a **truck stop** with fuel canopies and a diner, cold-storage, fulfilment and bulk warehouses, substations, water towers, solar farms, tank farms, an HQ tower and staff parking with shuttle-bus stops, filling about 100 plots across 6 avenues |
+| Rail grid | The **north trunk** and the **middle trunk** go down first, double track the width of the map, with portals at both edges where freight comes and goes, and the link to the **mine line** |
+| Manufacturing | **Factories** in three tiers (refining → components → final assembly), every kind with a building design of its own (blast furnace and coke ovens, potline, distillation columns, clean room, high-bay press hall, test cells…). Each grows in its own **block**, after the block's **spine**, **station** and **mover depot**; final assembly belts its cartons into a distribution centre next door |
+| Rail freight | **Freight** runs in from the portals with imports, straight to the station of the block that ordered them, and leaves with the blocks' product crates. **Block shuttles** carry boxes between blocks. Every spine has a **stabling yard** at its foot |
+| Seaport | A **port terminal** on the coast, in a block of its own with its own station: ship-to-shore cranes discharge, movers carry the boxes to the station, and they go on by rail |
+| Mining | **Ore trains** collect empties at the container works, load at the iron and coal mines, the bauxite pit, the sand quarry and the grain farm, and run straight to the blocks that use them. The gas field pipes chemicals and propane to the plants |
+| Mega hub | Power plants with steaming cooling towers and pylon lines along the highway, solar farms, tank farms, substations, water towers and an HQ tower filling the utility blocks, and the rest of the spines laid |
 
-No raw material is ever trucked in from outside. Every input arrives by train, ship, air freighter or
-pipeline (or from another plant in the park), and **autonomous container movers** carry it the last leg from the
-terminal crane to the plant. No road truck ever works a rail or port terminal: movers also carry the export
-boxes and the empties. Trucks are left with customer distribution, air cargo feeders and returning
-surplus empties to the shipping lines. A full
-build-out takes roughly an hour at 1× (use 2×/4×/8× to speed it up).
+The map is a grid of **14 blocks**: seven columns, each north or south of the highway. A block is two rows of four
+plots either side of a short road of its own, and that road never meets the highway: nothing crosses the map by road.
+Between blocks everything moves by train; inside a block, **autonomous container movers** carry each box the last
+hundred metres between the station and a dock. No raw material is ever trucked in from outside: every input arrives
+by train, ship or pipeline (or from another plant). The highway keeps its through traffic. A full build-out takes
+roughly an hour at 1× (use 2×/4×/8× to speed it up).
 
 ## Supply chain: order-driven and physically traced
 
@@ -80,65 +82,54 @@ order is routed the way it would be in real life:
 | Mode | What happens |
 |------|--------------|
 | **Sea** | The order is booked on the next vessel. The ship arrives with *that* container on deck, the STS crane discharges it straight onto a container mover waiting on a crane spot, and the mover drives that exact box to the plant |
-| **Rail** | The order rides a specific train's flatcar (mine trains bring bulk in open-top bins). The gantry lifts it onto a container mover |
-| **Air** | The order is built into a ULD on a specific flight. It's tugged off, clears customs and appears on the landside rack, a ULD mover carries it to the plant, and the empty ULD goes back to the airport |
+| **Rail** | The order rides a specific freight wagon in from the map edge (ore trains bring bulk in open-top bins) to the station of the plant's block. The gantry grounds it and a container mover takes it to the plant |
 | **Pipeline** | Chemicals and propane are pumped from the gas field straight into the plant's tanks |
-| **In-park transfer** | A mover is loaded at the producer's shipping bay and drives the intermediate product to the consumer |
+| **Transfer** | A mover is loaded at the producer's shipping bay. In the same block it drives straight to the consumer; otherwise it drops the box at its station, a block shuttle carries it to the consumer's block, and a mover there takes it the last stretch |
 
-Liquids travel in ISO tank containers and are pumped off through a hose; open loads (ore, coal, logs, coils, glass)
-ride in open-top bins and flat-racks with the cargo in view. After unloading, a mover takes its empty back to the
-yard it came from.
+A box landed at the port for another block goes by mover to the port block's station and on by rail. Liquids travel
+in ISO tank containers and are pumped off through a hose; open loads (ore, coal, logs, coils, glass) ride in
+open-top bins and flat-racks with the cargo in view. After unloading, a mover takes its empty back to its block's
+station, where a small pool of empties is kept for the next transfer.
 
-**The mover fleet.** Movers live at **mover depots**, each with 20 drive-through charging bays under pantograph
-charging masts. A job takes the charged mover nearest its first stop. It drives out, works its legs and comes back
-to its own bay; if another container is already waiting when it drops an empty, it takes that job straight on. A
-crane terminal's spots are booked when a mover is dispatched, so movers never queue at a yard gate out on the
-avenue; the air terminal's ULD docks and the plants also let a few wait in their own staging lanes.
-Movers run faster than road trucks and keep a reserve for factory supply: exports and empty repositioning only take
-a mover when no container is waiting for one. The first depot opens with a full fleet of 20 just before the first
-rail terminal. Whenever jobs wait for a free mover, fleet control orders enough for every waiting container plus the
-reserve: each one comes in on a heavy-haul lowloader that drives down an empty bay's lane, where the new mover
-reverses off the deck onto its charger, one lowloader at a time and never while the roads are congested (a jam is
-not a mover shortage). Before the last bays fill, the planner builds another depot (8 movers to start) on the
-avenue with the fewest depots, so no one avenue carries the whole fleet home.
+**The mover fleet.** Every block has its own **mover depot**, with 20 drive-through charging bays under pantograph
+charging masts, and its movers never leave the block. A job takes a charged mover from the block of its first stop. It
+drives out, works its legs and comes back to its own bay; if another container is already waiting when it drops an
+empty, it takes that job straight on. A station's truck bays are booked when a mover is dispatched, so movers never
+queue out on the road. Each depot opens with 8 movers, keeps a reserve for factory supply, and commissions another
+whenever its block's jobs wait for one.
 
-Stock only rises when the delivery is physically received at the dock: containers are opened and destuffed, ULDs
-broken down, tanks pumped through a hose. Click any container, ULD or vehicle to see its order and full journey log.
+Stock only rises when the delivery is physically received at the dock: containers are opened and destuffed,
+tanks pumped through a hose. Click any container, train or vehicle to see its order and full journey log.
 The **Orders** tab follows every order from placement to delivery.
 
 **Multi-stage industry**
 
-Production runs in **three tiers**, and none of it in the park itself: every factory has its own plot in an
-**industrial pod** west of the park, the pods set apart by forest, each with a **rail depot** of its own. Pods A · Metals
-and B · Materials refine and pods C · Drives & Circuits and D · Bodies & Fittings make components, south of the
-highway. Pods E and F do final assembly north of it, each line belting its cartons into a distribution centre next
-door. One plant of each kind supplies every line that uses its output.
+Production runs in **three tiers**, each in blocks of its own: Metals and Materials (refining) next to the mines in
+the north-west, Drives & Circuits and Bodies & Fittings (components) beside them, and three assembly blocks in the
+middle of the map, each line belting its cartons into a distribution centre next door. One plant of each kind supplies
+every line that uses its output. The Port block sits on the coast, and the rest are utility blocks.
 
-The pods are joined by an **industrial rail network**, laid out like a big rail base: double-track running lines
-(one track each way, trains keep right) with full junctions, and every stop on a loop of its own.
+**The rail grid**, laid out like a big rail base: double-track running lines (one track each way, trains keep right)
+with full junctions, and every stop on a loop of its own.
 
-- The **north trunk** runs beside the mainline. It joins the main at the west end, in from the eastbound track and out
-  across it onto the westbound one.
-- The **spine** runs south from the trunk down the forest gap between the pods, over the highway on a viaduct.
-- Each pod depot sits on a **station loop** off the spine. Trains turn in from either direction, work the platform,
-  run round the loop and leave in either direction.
-- The **mine line** (the branch past the mines and the container works) feeds the trunk from the east, straight
-  across both main tracks.
-- A **stabling yard** with four roads sits on a balloon at the foot of the spine. Idle trains wait there instead of
-  circling.
+- The **north trunk** and the **middle trunk** (just north of the highway) run the width of the map and off both
+  edges, where freight enters and leaves.
+- A **spine** runs north–south between every two columns of blocks: from a T-junction on the north trunk, across the
+  middle trunk at a four-way junction, over the highway on a viaduct, down to a **stabling yard** with four roads on a
+  balloon at its foot, where idle trains wait.
+- Each block's **station** sits on a loop off its spine. Trains turn in from either direction, work the platform
+  under the station's gantry, run round the loop and leave either way. One more train can wait inside the loop while
+  the platform is busy.
+- The **mine line**, the branch past the container works and the mines, feeds the north trunk from the west.
 
 Junctions are signalled. A train reserves every conflict ahead of it in a junction at once (the merges, diverges and
 crossings it will foul) and releases each as its tail clears it, so trains never meet and never stop inside a
-junction. Signal masts show red while a conflict is held. A crossing of the main is only taken when both main tracks
-are clear, and mainline trains stop at their signal while it is held.
+junction. Signal masts show red while a conflict is held.
 
-- **Pod shuttles** carry boxes between pods. A mover loads a container at the shipping dock and drops it at the pod's
-  depot, the depot gantry puts it on the next shuttle, and a mover collects it at the other pod. The empty rides home
-  to its pod's pool.
-- **Industrial freight** runs in from the edge of the map with imports for the pods, straight to their depots, and
-  takes the pods' product crates away.
+- **Block shuttles** carry boxes between blocks: deliveries first, collections on the way.
+- **Freight** brings imports in from the map edge straight to the blocks and takes the product crates away.
 - **Ore trains** run up the mine line, collect empties at the container works, load at the mine and run straight to
-  the pod that ordered the ore.
+  the block that ordered the ore.
 
 | Tier 1 · Refining | Turns | Into |
 |-------------------|-------|------|
@@ -171,8 +162,8 @@ are clear, and mainline trains stop at their signal while it is held.
 | Pharma | Chemicals + electronic components |
 
 Final-assembly plants send finished cartons over a belt bridge into their paired distribution centre. From there,
-goods go out to customers, to the airport, into export containers for the seaport, or into **WareTrack product
-crates** for the railway. Until the park makes a material itself, it is imported by rail or sea. The planner builds
+goods go out in **WareTrack product crates**: a mover fills one at the dock and drops it at the block's station for
+the next freight out. Until the map makes a material itself, it is imported by rail or sea. The planner builds
 supply bottom-up: a component plant once enough assembly lines use its part, a refinery once enough component plants
 (or lines) use its stock. Plants starve, visibly and on their cards, when a delivery is late, and run out of space
 ("Output full") when nobody collects. The **Supply** tab lists every plant by tier.
@@ -184,8 +175,8 @@ At the factory dock each piece is swung off the top of the load onto the dock be
 the bed is bare. At a producer's shipping bay, a shuttle's bed fills from the headboard back as product comes off
 the line.
 
-**Container terminals (rail yards and seaport) run on one shared engine**, `js/terminal.js`:
-- **Cranes acting as one.** Rail yards run three gantries on one pair of rails, the seaport two quay cranes. Split
+**The seaport runs on a container terminal engine**, `js/terminal.js`:
+- **Cranes acting as one.** The two quay cranes share one pair of rails. Split
   lines divide the yard between them and follow the queued work, so each crane gets an equal share. Each crane
   takes only lifts in its own stretch, so all work at the same time without blocking each other. When one crane
   runs short of work its lines shift toward it. A lift that spans two stretches goes ahead with rail claims, and the
@@ -193,71 +184,60 @@ the line.
 - **Truck lanes with a bypass.** Each crane area has a service lane with numbered spots and a bypass lane beside it,
   so trucks can drive around parked ones and enter or leave in any order. Each spot has a straight run-in, so the
   rig is square before it stops.
-- **Forward thinking.** At the gate a truck is given the spot nearest its box. Once it's a few seconds out, the crane
-  is already lifting the box and holding it over the spot. Trucks are dispatched as soon as their train or ship
-  arrives, and a box still aboard goes straight from wagon or deck onto the truck.
+- **Forward thinking.** At the gate a mover is given the spot nearest its box. Once it's a few seconds out, the crane
+  is already lifting the box and holding it over the spot. Movers are dispatched as soon as the ship arrives, and a
+  box still aboard goes straight from the deck onto the mover.
 - **Never parked.** An idle crane moves to where its next work will be, or restacks boxes nearer the truck spots.
-- **Empties go to the depot by truck.** They never ride a train or ship. A nearly full depot sends surplus empties
-  back to the shipping lines.
+- **Empties go to the station.** Empties piling up at the port go by mover to the port block's station pool.
 
 **Seaport traffic.** Separate inbound and outbound tracks, and an anchorage where the next ship waits while the berth
 is busy. Ships enter and leave only with clearance, two harbour tugs escort them on and off the berth, and moving
 ships leave a wake.
 
-**Airport.** Parallel runways: 09R for arrivals, 09L for departures. Arrivals cross 09L at the east end only when it's
-clear, and departures never roll while anything is crossing. There are six stands, pushback clearance with a
-reserved stretch of taxiway, and wingtip spacing on the taxiway. Landings flare with tyre smoke at touchdown, and
-departures rotate at take-off.
+**Roads.** The highway runs straight across the map with through traffic only. Each block has a short road of its own,
+two lanes each way, that starts at a turning head behind a hedge and never meets the highway; construction crews come
+in along it and leave the same way.
 
-**Roads.** The highway and avenues have two lanes each way. Turns that stay on your own side of the road use the
-outer lane; turns across traffic use the inner lane. Vehicles pick their lane when they join the highway, and
-trucks take wider, smoother corners.
-
-**Distribution centers.** Trucks drive down the yard road, pull past their door and reverse square onto the
+**Distribution centers.** Movers drive down the yard road, pull past their door and reverse square onto the
 dock, guided by bay lines. They pull straight out when they're done. The roller door opens, and a dock forklift
 inside drives onto the leveler and puts its forks into the trailer, one pallet at a time. Separate **forklift doors**
 between the dock doors, with yellow guard posts and marked walkways, let the yard forklifts carry pallets between
 the outdoor yard and the building. They stage stock out when the yard runs low and put it away when it fills up.
 
-**Realistic handling:** terminal appointments with a truck queue at the gate, staging lanes inside plant gates,
-street-turned empties, a container depot, and long lead times for sea freight that primary plants buffer against.
+**Realistic handling:** station and terminal appointments, staging lanes inside plant gates, a pool of empties at
+every station, and long lead times for imports that primary plants buffer against.
 
 ## Traffic
 
 - Collision avoidance: each vehicle knows its body shape, follows the car ahead, predicts crossing conflicts and
   yields by right of way (junction > highway > avenue > yard). A deadlock breaker handles circular waits.
-- **Queue-actuated traffic signals** at every highway junction. Green time follows the queue on each axis, and a
-  signal hands over as soon as its queue is empty and the cross street is waiting.
-- **Junction box manager.** Movements whose swept paths would cross never share the box. Opposing through traffic and
-  paired right turns go together. No vehicle enters a junction unless its whole body fits beyond the exit
-  ("don't block the box").
-- **Dispatch metering.** Dispatch watches how much traffic is queued. It meters new truck releases when the roads get
-  busy and holds them when they're jammed (see *Supply → Roads*). Finished trucks leave by the nearest exit.
+- **Dispatch metering.** Dispatch watches how much traffic is queued. It meters new mover releases when a block's
+  road gets busy and holds them when it's jammed (see *Supply → Roads*).
 - **Articulated semis.** Every rig is a tractor and a semi-trailer hinged at the fifth wheel. Pulling forward, the
   trailer trails the tractor through bends like a real one and cuts slightly inside. Reversing onto a dock, the
   trailer leads and the tractor follows it in. Collision bodies follow both parts.
 - **Off-street docking.** Every unload path is laid out clear of buildings, belts, stockpiles, crane legs and pylons,
   and a geometry audit checks each vehicle's full body sweep. Factories have a **drive-through receiving road**: movers
   enter at one gate, run down a bypass lane, pull alongside a bay beside the dock wall, are unloaded sideways onto
-  the dock belt and drive straight on out of the other gate, never reversing. At warehouses and the air terminal,
-  trucks pull past the bay and **reverse onto the dock**, while traffic behind holds back to give them room. Terminal
-  trucks enter and leave the crane lanes from the ends, outside the gantry's travel. Yard forklifts yield to moving
-  trucks.
+  the dock belt and drive straight on out of the other gate, never reversing. At warehouses, movers pull past the
+  bay and **reverse onto the dock**, while traffic behind holds back to give them room. At stations and the port,
+  movers enter and leave the crane lanes from the ends, outside the gantry's travel. Yard forklifts yield to moving
+  vehicles.
 - **Gate barriers** lift for vehicles at every plot entrance. Terminals add an OCR portal where trucks stop for the
   gate-in check.
-- The vehicle card's *Traffic* row says why a vehicle is waiting: red light, junction busy, exit blocked, or queued
-  behind another vehicle.
+- The vehicle card's *Traffic* row says why a vehicle is waiting: exit blocked, or queued behind another vehicle. A
+  train's status says when it is held at a signal.
 - The version is shown next to the logo (currently **v5.8.0**). Hard-refresh (Ctrl+F5) if it doesn't match.
 - Vehicle variety: cab-over and long-hood rigs; box, curtainsider, reefer, tanker, coil, log, container and dump
-  trailers; concrete mixers; sedans, SUVs, vans, pickups and shuttle buses. Through trains carry tank, hopper and box
-  wagons, and tankers and bulk carriers pass offshore.
+  trailers; concrete mixers; sedans, SUVs, vans, pickups and coaches. Trains carry container flats with boxes, tanks
+  and open loads, and tankers and bulk carriers pass offshore.
 
 ## Watching
 
 - **Auto camera** (on by default, **C**) cuts to new construction, freighters on approach, trains arriving and ships
   berthing. Between events it follows trucks, shows factory belts and gives slow orbits and overviews. Any mouse or
   keyboard input hands you control, and it resumes after 30 s.
-- The **Industry** chip flies to the industrial pods and their rail network.
+- The **Rail grid** chip flies out over the whole map, and **Trains** follows the busiest train on the grid.
 - **Cinema mode** (**U**) hides the dashboard and leaves a slim status ticker.
 - **Dark mode** (**N**, or the moon button in the map toolbar) switches the dashboard to dark and the park to night:
   a moonlit sky, with street lamps, headlights and office windows lit. It follows your system setting until you
@@ -274,11 +254,11 @@ street-turned empties, a container depot, and long lead times for sea freight th
 - `js/assets.js`: downloaded 3D models (truck cabs, cars, vans, the 787, locomotives, forklifts): decoded from
   `js/models_data.js`, fitted to the park and cloned per vehicle; the hand-built models are the fallback
 - `js/models.js`, `js/models_ext.js`: hand-built models (merged vertex-coloured geometry with chamfered edges)
-- `js/world.js`: terrain, highway, coast, instanced forest, plot grid, avenue paving, rail line, road router, pylons
+- `js/world.js`: terrain, highway, coast, instanced forest, block plots and roads, road router, pylons
 - `js/fx.js`: smoke, steam and dust particles, and instanced conveyor belts
-- `js/fac_*.js`: facilities (warehouse, factory, rail, port, airport, depot and truck stop, misc)
+- `js/fac_*.js`: facilities (warehouse, factory, port, mines and gas field, mover depot, utilities; the mainline rail terminal and the airport are no longer built)
 - `js/plant_designs.js`: a building design for every kind of plant
-- `js/ring.js`: the industrial pods and their rail network: trunk, spine, station loops, signalled junctions, stabling yard, depots, shuttles, industrial freight, ore trains
+- `js/ring.js`: the rail grid and its blocks: trunks, spines, junctions, station loops, signalled conflicts, stabling yards, block stations, shuttles, freight, ore trains
 - `js/traffic.js`: traffic engine (avoidance, signals, gates), vehicles, multi-leg missions, ambient traffic
 - `js/supply.js`: materials, recipes, container contents and journeys, demand-driven dispatcher
 - `js/models_fleet.js`: rigs and trailers, cars and buses, wagons, ships, signals, barriers, lamps
@@ -301,9 +281,9 @@ npm run pack-models    # re-pack assets/models/*.glb into js/models_data.js afte
 - `npm run build` copies the site to `dist/`, tags every asset URL with a hash of the file contents (so any change
   busts browser caches, even for uncommitted work) and stamps the version badge with the commit hash.
 - `npm run test:sim` boots the built site in headless Chrome with a fixed random seed and grows the park through
-  most of a day. It fails on any page error, on stalled growth or unfed factories, on vehicles piling into each
-  other or traffic locking up, or if any truck path (docks, reverse manoeuvres, staging lanes, public roads)
-  sweeps through a building, belt, stockpile, crane or tree.
+  most of a day. It fails on any page error, on stalled growth or unfed factories, on two trains meeting, on a mover
+  leaving its block, on vehicles piling into each other or traffic locking up, or if any truck path (docks, reverse
+  manoeuvres, staging lanes, block roads) sweeps through a building, belt, stockpile, crane or tree.
 
 ### CI / CD
 

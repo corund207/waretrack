@@ -1,87 +1,100 @@
-/* WareTrack – the industrial rail network
-   Every factory lives in a pod west of the park, set apart by forest, each pod with a rail depot of its own:
-   four pods south of the highway refine and make components, two north of it do final assembly beside their
-   distribution centres. The pods are served the way a big rail base is laid out: double-track running lines
-   (one track each way, trains keep right) with full junctions, and every stop on a loop of its own off the line.
-     · the north trunk runs along the mainline and joins it at the west end (in off the eastbound main, out across
-       it onto the westbound one),
-     · the spine runs south from the trunk down the forest gap between the pods, over the highway on a viaduct,
-     · each pod depot sits on a station loop off the spine: trains turn in from either direction, work the
-       platform, run round the loop and leave either way,
-     · the mine line (the existing branch past the mines and the container works) feeds the trunk from the east,
-       across both main tracks, so ore goes from the pit straight to the pod that uses it,
-     · a stabling yard on a balloon at the south end of the spine, where idle trains wait instead of circling.
+/* WareTrack – the rail grid
+   The whole map is laid out around rail, the way a big rail base is: double-track running lines (one track each way,
+   trains keep right) in a grid, full junctions where they meet, and every stop on a loop of its own.
+     · two trunks run the width of the map and off both edges, where freight comes and goes: the north trunk and the
+       middle trunk (just north of the highway),
+     · a spine runs north–south between every two columns of blocks, from the north trunk across the middle trunk
+       and over the highway on a viaduct, down to a stabling yard at its foot,
+     · every block (a column of plots either side of a short road of its own, north or south of the highway) is
+       served by a station on a loop off its spine: trains turn in from either direction, work the platform, run round
+       the loop and leave either way,
+     · the mine line past the mines and the container works feeds the north trunk from the west.
+   Nothing crosses the map by road. A block's road only runs inside the block, for the movers that carry a box the
+   last hundred metres between its station and a dock; between blocks everything goes by train.
    Junctions are worked like signalled blocks: a train reserves every conflict ahead of it in a junction at once
    (the merges, diverges and crossings it will foul) and releases each as its tail clears it.
-   Pod shuttles carry boxes between pods, industrial freight brings imports from the mainline and takes the pods'
-   product crates away, and ore trains collect empties at the container works, load at a mine and run to the
-   pods. A mover covers the last stretch from a depot to a plant's dock. */
+   Block shuttles carry boxes between blocks, freight brings imports in from the map edge straight to the block
+   that ordered them and takes product crates away, and ore trains load at the mines for the blocks that use ore. */
 (function () {
   const T = THREE, M = WT.M, W = WT.W, CR = WT.CraneOps;
-  const [AW, AE] = W.RING_AVENUES;
-  const R = (WT.RING = { built: false, building: false, trains: [], stats: { moved: 0, empties: 0, issued: 0, calls: 0, freight: 0, imported: 0, exported: 0, ore: 0, oreBoxes: 0, stabled: 0 } });
-  R.EXPORT = { id: 'export', name: 'Export by rail' }; // the destination of a crate that leaves on industrial freight
+  const R = (WT.RING = { built: false, trains: [], stats: { moved: 0, empties: 0, issued: 0, calls: 0, freight: 0, imported: 0, exported: 0, ore: 0, oreBoxes: 0, stabled: 0 } });
+  R.EXPORT = { id: 'export', name: 'Export by rail' }; // the destination of a crate that leaves on freight
   const hex = (c) => '#' + c.toString(16).padStart(6, '0');
-  R.center = [-1200, -60];
+  R.center = [0, -60];
 
-  /* ================= pods ================= */
-  R.PODS = [
-    { key: 'A', name: 'Metals', tier: 1, A: AW, h: 1, rows: [0, 1], color: 0xd9622b, plants: ['Steel Mill', 'Copper Refinery', 'Aluminium Smelter'] },
-    { key: 'B', name: 'Materials', tier: 1, A: AW, h: 1, rows: [4, 3], color: 0x37b26c, plants: ['Chemical Plant', 'Sawmill', 'Glass Works'] },
-    { key: 'C', name: 'Drives & Circuits', tier: 2, A: AE, h: 1, rows: [0, 1], color: 0x2f56e0, plants: ['Wire Mill', 'Motor Works', 'Circuit Fab'] },
-    { key: 'D', name: 'Bodies & Fittings', tier: 2, A: AE, h: 1, rows: [4, 3], color: 0x7a5cd6, plants: ['Panel Press', 'Moulding Shop', 'Frame Shop'] },
-    { key: 'E', name: 'Assembly West', tier: 3, A: AW, h: -1, color: 0xf0b429, plants: ['Appliances', 'Auto Parts', 'Machinery', 'Electronics', 'E-Bikes'] },
-    { key: 'F', name: 'Assembly East', tier: 3, A: AE, h: -1, color: 0x1aa6b7, plants: ['Beverages', 'Furniture', 'Pharma', 'Solar Panels', null] },
-  ];
-  const plot = (pod, s, k, extra) => Object.assign(W.makePlot(pod.A, s, pod.h, k), { pod }, extra);
-  for (const pod of R.PODS) {
-    const sIn = pod.A === AW ? 1 : -1;
-    if (pod.tier < 3) {
-      // two rows: both plots on the outer side and the far one on the inner side are plants, the inner plot next to
-      // the forest gap between the pods is the depot
-      const [far, near] = pod.rows;
-      pod.slots = [[-sIn, far], [-sIn, near], [sIn, far]].map(([s, k], i) => plot(pod, s, k, { podPlant: pod.plants[i] }));
-      pod.dcs = [];
-      pod.depotPlot = plot(pod, sIn, near, { podDepot: true });
-      pod.z0 = pod.rows[0] === 0 ? 9 : 331; pod.z1 = pod.rows[0] === 0 ? 229 : 553;
-      pod.ends = pod.rows[0] === 0 ? [229] : [331, 553];
-    } else {
-      // the whole avenue half: five assembly lines, each belting its cartons into a distribution centre next door
-      // (one centre serves the lines either side of it), and the depot on the inner side mid-way along
-      const dc = { o1: plot(pod, -sIn, 1, { podDC: true }), o3: plot(pod, -sIn, 3, { podDC: true }), i1: plot(pod, sIn, 1, { podDC: true }), i3: plot(pod, sIn, 3, { podDC: true }) };
-      pod.slots = [[-sIn, 0], [-sIn, 2], [-sIn, 4], [sIn, 0], [sIn, 4]].map(([s, k], i) => plot(pod, s, k, { podPlant: pod.plants[i] }));
-      pod.dcs = [dc.o1, dc.o3, dc.o3, dc.i1, dc.i3];
-      pod.depotPlot = plot(pod, sIn, 2, { podDepot: true });
-      pod.z0 = -553; pod.z1 = -9; pod.ends = [-553];
+  /* ================= blocks ================= */
+  // A block is one column (avenue) north or south of the highway: four rows of plots either side of its road. Every
+  // block with work to do has a station on the side facing its spine (row 1), a mover depot beside it (row 0), and
+  // the rest of its plots for plants, distribution centres and utilities.
+  const ROLES = {
+    N1: { name: 'Metals', tier: 1, plants: ['Steel Mill', 'Copper Refinery', 'Aluminium Smelter'], color: 0xd9622b },
+    N2: { name: 'Materials', tier: 1, plants: ['Chemical Plant', 'Sawmill', 'Glass Works'], color: 0x37b26c },
+    N3: { name: 'Drives & Circuits', tier: 2, plants: ['Wire Mill', 'Motor Works', 'Circuit Fab'], color: 0x2f56e0 },
+    N4: { name: 'Assembly North', tier: 3, plants: ['Appliances', 'Auto Parts', 'Machinery'], color: 0xf0b429 },
+    N5: { name: 'Assembly Tech', tier: 3, plants: ['Electronics', 'E-Bikes', 'Solar Panels'], color: 0x1aa6b7 },
+    S3: { name: 'Bodies & Fittings', tier: 2, plants: ['Panel Press', 'Moulding Shop', 'Frame Shop'], color: 0x7a5cd6 },
+    S4: { name: 'Port', port: true, plants: [], color: 0x3a6ff7 },
+    S5: { name: 'Assembly South', tier: 3, plants: ['Beverages', 'Furniture', 'Pharma'], color: 0xd9434b },
+  };
+  R.BLOCKS = [];
+  W.AVENUES.forEach((A, i) => {
+    for (const h of [-1, 1]) {
+      const key = (h < 0 ? 'N' : 'S') + (i + 1), role = ROLES[key] || { name: 'Utilities', utility: true, plants: [], color: 0x8e95b8 };
+      // the spine its station is on: the one west of it, except the westmost column, which faces east
+      const si = i === 0 ? 0 : i - 1, sx = W.SPINES[si], sSt = sx < A ? -1 : 1;
+      const b = Object.assign({ key, A, h, spine: si, sx, sSt, tier: role.tier || 0, depot: null }, role);
+      const plot = (s, k, extra) => Object.assign(W.plotAt(A, s, h, k), { pod: b }, extra);
+      b.plots = [-1, 1].flatMap((s) => [0, 1, 2, 3].map((k) => plot(s, k)));
+      b.dcs = [];
+      if (!b.utility) {
+        b.stationPlot = plot(sSt, 1, { podDepot: true });
+        b.moverPlot = plot(sSt, 0);
+      }
+      if (b.tier === 3) {
+        // three assembly lines, each belting its cartons into a distribution centre next door (one centre serves the
+        // two lines either side of it)
+        b.slots = [[-sSt, 0], [-sSt, 2], [sSt, 2]].map(([s, k], j) => plot(s, k, { podPlant: b.plants[j] }));
+        const dcA = plot(-sSt, 1, { podDC: true }), dcB = plot(sSt, 3, { podDC: true });
+        b.dcs = [dcA, dcA, dcB];
+      } else if (b.tier) b.slots = [[-sSt, 1], [-sSt, 0], [sSt, 2]].map(([s, k], j) => plot(s, k, { podPlant: b.plants[j] }));
+      else b.slots = [];
+      const taken = [b.stationPlot, b.moverPlot, ...b.slots, ...b.dcs];
+      b.fillers = b.plots.filter((p) => !taken.includes(p));
+      const zs = b.plots.map((p) => p.zc);
+      b.z0 = Math.min(...zs) - 53; b.z1 = Math.max(...zs) + 53;
+      R.BLOCKS.push(b);
     }
-    pod.depot = null;
-  }
-  R.podFor = (name) => R.PODS.find((p) => p.plants.includes(name)) || null;
-  const idx = (pod, name) => pod.plants.indexOf(name);
-  // the pod plot reserved for a plant of this kind, while it is free
+  });
+  R.PODS = R.BLOCKS; // (older name)
+  R.block = (key) => R.BLOCKS.find((b) => b.key === key);
+  R.podFor = (name) => R.BLOCKS.find((b) => b.plants.includes(name)) || null;
+  const idx = (b, name) => b.plants.indexOf(name);
+  // the block plot reserved for a plant of this kind, while it is free
   R.slotFor = (name) => {
-    const pod = R.podFor(name), p = pod && pod.slots[idx(pod, name)];
+    const b = R.podFor(name), p = b && b.slots[idx(b, name)];
     return p && !p.used ? p : null;
   };
   // an assembly line's distribution centre: its plot, and the centre itself once it is planned or built
-  R.dcSlot = (name) => { const pod = R.podFor(name); return pod && pod.tier === 3 ? pod.dcs[idx(pod, name)] : null; };
+  R.dcSlot = (name) => { const b = R.podFor(name); return b && b.tier === 3 ? b.dcs[idx(b, name)] : null; };
   R.dcOf = (name) => { const p = R.dcSlot(name); return p && p.used && p.used.type === 'Warehouse' ? p.used : null; };
-  // pods with a plant but no depot yet (the growth director builds one for each once the network is down)
-  R.needsDepot = () => R.PODS.find((pod) => !pod.depot && pod.slots.some((p) => p.used));
-  // a transfer goes by rail when both plants sit in different pods whose depots are working
+  // the block a facility belongs to (its plot's, or the port's)
+  R.blockOf = (f) => (f && (f.pod || (f.plot && f.plot.pod))) || null;
+  // a station that is working
+  const working = (d) => !!(d && d.active && d.stopEdge && d.stopEdge.built);
+  // a transfer goes by rail when the two plants sit in different blocks whose stations are working
   R.route = (p, q) => {
-    const a = p.pod && p.pod.depot, b = q.pod && q.pod.depot;
-    return a && b && a !== b && a.active && b.active && R.trains.some((t) => t.role === 'shuttle') ? { from: a, to: b } : null;
+    const a = R.blockOf(p), b = R.blockOf(q), da = a && a.depot, db = b && b.depot;
+    return a && b && a !== b && working(da) && working(db) && R.trains.some((t) => t.role === 'shuttle') ? { from: da, to: db } : null;
   };
-  // a pod plant's imports come by industrial freight once its depot and the mainline links are working
-  R.serves = (f) => !!(R.built && W.railBuilt && f && f.pod && f.pod.depot && f.pod.depot.active);
+  // a block facility's imports come by freight once the trunk and its station are working
+  R.serves = (f) => { const b = R.blockOf(f); return !!(R.built && b && working(b.depot)); };
 
   /* ================= track network ================= */
-  // One-way edges between nodes. Running lines are double track 6 m apart: the spine's southbound track on its west
-  // side, the trunk's eastbound track on its south side (trains keep right).
-  const RZ = W.RAIL.zE, RW = W.RAIL.zW, XO = W.EDGE + 250;
-  const BR = -688, XB = W.EDGE + 400; // the mine branch past the remote sites (js/fac_remote.js) and its west end
-  const SX = -1200, NT = -603, RAD = 22, FOUL = 4.5;
+  // One-way edges between nodes. Running lines are double track 6 m apart: a spine's southbound track on its west
+  // side, a trunk's eastbound track on its south side (trains keep right).
+  const XO = W.EDGE + 250, BR = -688, XB = W.EDGE + 400; // portals beyond the map edge; the mine line and its west end
+  const NT = -632, MT = -150, RAD = 22, FOUL = 4.5, H = 40;
+  R.NT = NT; R.MT = MT;
   const NODES = {}, EDGES = [], LOCKS = [];
   const node = (id) => (NODES[id] = NODES[id] || { id, out: [], in: [] });
   // corners filleted with true circular arcs (radius rad, or less where the straights between corners are short),
@@ -138,8 +151,9 @@
   }
   // viaduct profile over the highway: deck 6.5 m up across it, ramps 38 m long either side
   const viaY = (z) => { const a = Math.abs(z); if (a <= 12) return 6.5; if (a >= 50) return 0; const u = (a - 12) / 38; return 6.5 * (1 - u * u * (3 - 2 * u)); };
+  let curWork = null; // the works the edges being defined belong to (each is laid by its own project)
   function edge(id, from, to, pts, o = {}) {
-    const e = Object.assign({ id, from: node(from), to: node(to), zones: [] }, o);
+    const e = Object.assign({ id, from: node(from), to: node(to), zones: [], work: curWork, built: false }, o);
     e.path = densePath(curve(pts, o.rad));
     e.len = e.path.len;
     e.yAt = (off) => viaY(e.path.at(off).z);
@@ -151,21 +165,54 @@
     return e;
   }
   // the running lines: junction nodes are placed on them first, then the lines are cut into edges between them
-  const LINES = {
-    SB: { at: (t) => [SX - 3, t], dir: 1 }, NB: { at: (t) => [SX + 3, t], dir: -1 }, // t = z
-    EB: { at: (t) => [t, NT + 3], dir: 1 }, WB: { at: (t) => [t, NT - 3], dir: -1 }, // t = x
-  };
-  const stops = { SB: [], NB: [], EB: [], WB: [] };
-  const on = (line, t, id) => { stops[line].push({ t, id }); return id; };
+  const LINES = {};
+  const line = (id, at, dir, work) => (LINES[id] = { at, dir, work, stops: [] });
+  const on = (lid, t, id) => { LINES[lid].stops.push({ t, id }); return id; };
+  for (const [tk, zc] of [['N', NT], ['M', MT]]) {
+    line(tk + 'EB', (t) => [t, zc + 3], 1, 'trunk');
+    line(tk + 'WB', (t) => [t, zc - 3], -1, 'trunk');
+    // the portals: in from the west on the eastbound track, from the east on the westbound one, out the other ways
+    on(tk + 'EB', -XO, tk + '-in-W'); on(tk + 'EB', XO, tk + '-out-E');
+    on(tk + 'WB', XO, tk + '-in-E'); on(tk + 'WB', -XO, tk + '-out-W');
+  }
+  W.SPINES.forEach((sx, i) => {
+    line('SB' + i, (t) => [sx - 3, t], 1, 'spine' + i);
+    line('NB' + i, (t) => [sx + 3, t], -1, 'spine' + i);
+  });
+  // A junction where a trunk meets a spine. Each arm is double track: in on one track, out on the other; every
+  // turn is an edge of its own from the arm's entry node to the other arm's exit node, the straights run on the lines.
+  function junction(id, xc, zc, arms, tk, si) {
+    curWork = 'spine' + si;
+    const SB = 'SB' + si, NB = 'NB' + si, A = {};
+    if (arms.includes('W')) A.W = { inL: tk + 'EB', inT: xc - H, inP: [xc - H, zc + 3], outL: tk + 'WB', outT: xc - H, outP: [xc - H, zc - 3], inZ: zc + 3, outZ: zc - 3 };
+    if (arms.includes('E')) A.E = { inL: tk + 'WB', inT: xc + H, inP: [xc + H, zc - 3], outL: tk + 'EB', outT: xc + H, outP: [xc + H, zc + 3], inZ: zc - 3, outZ: zc + 3 };
+    if (arms.includes('N')) A.N = { inL: SB, inT: zc - H, inP: [xc - 3, zc - H], outL: NB, outT: zc - H, outP: [xc + 3, zc - H], inX: xc - 3, outX: xc + 3 };
+    if (arms.includes('S')) A.S = { inL: NB, inT: zc + H, inP: [xc + 3, zc + H], outL: SB, outT: zc + H, outP: [xc - 3, zc + H], inX: xc + 3, outX: xc - 3 };
+    for (const [k, a] of Object.entries(A)) { a.inN = on(a.inL, a.inT, `${id}-${k}i`); a.outN = on(a.outL, a.outT, `${id}-${k}o`); }
+    const opp = { W: 'E', E: 'W', N: 'S', S: 'N' };
+    for (const [ka, a] of Object.entries(A)) for (const [kb, b] of Object.entries(A)) {
+      if (ka === kb || opp[ka] === kb) continue; // (straight through runs on the line itself)
+      // the corner: where the incoming track's line meets the outgoing track's
+      const corner = a.inZ !== undefined ? [b.outX, a.inZ] : [a.inX, b.outZ];
+      edge(`${id}-${ka}${kb}`, a.inN, b.outN, [a.inP, corner, b.outP]);
+    }
+    curWork = null;
+  }
+  W.SPINES.forEach((sx, i) => {
+    junction('jN' + i, sx, NT, 'WES', 'N', i);
+    junction('jM' + i, sx, MT, 'WENS', 'M', i);
+  });
 
-  // A station loop beside the spine. In its own frame u runs across from the spine toward the platform and v along
-  // the platform in the direction trains work it (south on the west side, north on the east side). The near running
-  // line is the one on the station's side. Both lines can turn in and both can be joined on the way out, so a full
+  // A station loop beside a spine. In its own frame u runs across from the spine toward the platform and v along the
+  // platform in the direction trains work it (south on the west side, north on the east side). The near running line
+  // is the one on the station's side. Both lines can turn in and both can be joined on the way out, so a full
   // junction: the turns from and onto the far line cross the near one.
-  function station(key, side, zc) {
-    const P = ([u, v]) => (side < 0 ? [SX - u, zc + v] : [SX + u, zc - v]);
+  function station(key, si, side, zc) {
+    const sx = W.SPINES[si];
+    curWork = 'st' + key;
+    const P = ([u, v]) => (side < 0 ? [sx - u, zc + v] : [sx + u, zc - v]);
     const zOf = (v) => (side < 0 ? zc + v : zc - v);
-    const near = side < 0 ? 'SB' : 'NB', far = side < 0 ? 'NB' : 'SB';
+    const near = (side < 0 ? 'SB' : 'NB') + si, far = (side < 0 ? 'NB' : 'SB') + si;
     const J = -72, L = J + 6, k = 'st' + key;
     const nd = on(near, zOf(J - 30), k + '-nd'), nm = on(near, zOf(L + 30), k + '-nm');
     const fd = on(far, zOf(J + 30), k + '-fd'), fm = on(far, zOf(L - 30), k + '-fm');
@@ -174,38 +221,38 @@
     const loop = edge(k, k + '-in', k + '-out', [[28, J], [128, J], [128, 82], [84, 82], [84, L], [28, L]].map(P), { station: key });
     edge(k + '-out-near', k + '-out', nm, [[28, L], [3, L], [3, L + 30]].map(P));
     edge(k + '-out-far', k + '-out', fm, [[28, L], [-3, L], [-3, L - 30]].map(P));
+    curWork = null;
     return loop;
   }
-  for (const pod of R.PODS) pod.station = station(pod.key, pod.A === AW ? -1 : 1, pod.depotPlot.zc);
+  for (const b of R.BLOCKS) if (b.stationPlot) b.station = station(b.key, b.spine, b.sx < b.A ? 1 : -1, b.stationPlot.zc);
 
-  // the spine meets the north trunk: in from the trunk's eastbound track and from the mine line on its westbound
-  // track, out onto the westbound track toward the mainline
-  on('SB', -560, 'tS'); on('NB', -560, 'tN'); on('EB', -1255, 'tE'); on('WB', -1255, 'tWm');
-  edge('t-es', 'tE', 'tS', [[-1255, NT + 3], [SX - 3, NT + 3], [SX - 3, -560]]);
-  edge('t-ws', 'tWd', 'tS', [[-1150, NT - 3], [SX - 3, NT - 3], [SX - 3, -560]]);
-  edge('t-ww', 'tWd', 'tWm', [[-1150, NT - 3], [-1255, NT - 3]]);
-  edge('t-nw', 'tN', 'tWm', [[SX + 3, -560], [SX + 3, NT - 3], [-1255, NT - 3]]);
-  // in off the eastbound main at the west edge of the map, out across it onto the westbound main
-  on('EB', -1600, 'eIn'); on('WB', -1560, 'xOut');
-  const ENTRY = edge('entry', 'edgeIn', 'eIn', [[-XO, RZ], [-1700, RZ], [-1650, NT + 3], [-1600, NT + 3]], { rad: 40, main: (p) => p.x < -1718 });
-  const EXIT = edge('exit', 'xOut', 'edgeOut', [[-1560, NT - 3], [-1600, NT - 3], [-1656, RW], [-XO, RW]], { rad: 40, main: (p) => p.x < -1674 });
-  // the mine line: in at the west end of the branch, past the container works and the mines, then off the branch
-  // short of its own junction with the main, straight across both main tracks and round onto the trunk
-  const MINE = edge('mine', 'brIn', 'brD', [[-XB, BR], [-985, BR]], { main: () => true });
-  const ORE = edge('ore-link', 'brD', 'tWd', [[-985, BR], [-955, BR], [-955, NT - 3], [-1150, NT - 3]]);
-  // the stabling yard: a balloon at the foot of the spine with four roads, every one long enough for a freight
-  const sbEnd = stops.SB.reduce((a, b) => (b.t > a.t ? b : a));
-  edge('yard-in', sbEnd.id, 'yD', [[SX - 3, sbEnd.t], [SX - 3, 520], [-1316, 520], [-1316, 562], [-1280, 562]]);
-  const YARD = [0, 1, 2, 3].map((k) => {
-    const z = 562 - 7 * k;
-    return edge('yard-' + (k + 1), 'yD', 'yM', k ? [[-1280, 562], [-1258, 562], [-1240, z], [-1160, z], [-1142, 562], [-1120, 562]] : [[-1280, 562], [-1120, 562]], { siding: k + 1 });
+  // a stabling yard at the foot of every spine: four roads off the southbound line, round a balloon onto the
+  // northbound one; idle trains wait here instead of circling, and a train that has to turn round runs through
+  const YARD = [];
+  W.SPINES.forEach((sx, i) => {
+    curWork = 'spine' + i;
+    const yD = on('SB' + i, 310, 'y' + i + 'D'), yOut = on('NB' + i, 296, 'y' + i + 'Out');
+    for (let k = 0; k < 4; k++) {
+      const x = sx - 3 - 7 * k;
+      YARD.push(edge(`yard${i}-${k + 1}`, yD, 'y' + i + 'M', k ? [[sx - 3, 310], [sx - 3, 322], [x, 340], [x, 500], [sx - 3, 518], [sx - 3, 530]] : [[sx - 3, 310], [sx - 3, 530]], { siding: k + 1, spine: i }));
+    }
+    edge(`yard${i}-out`, 'y' + i + 'M', yOut, [[sx - 3, 530], [sx - 3, 552], [sx + 41, 552], [sx + 41, 352], [sx + 3, 316], [sx + 3, 296]]);
+    curWork = null;
   });
-  on('NB', 496, 'yOut');
-  edge('yard-out', 'yM', 'yOut', [[-1120, 562], [-1082, 562], [-1082, 520], [SX + 3, 520], [SX + 3, 496]]);
-  for (const [k, L] of Object.entries(LINES)) {
-    const list = stops[k].sort((a, b) => (a.t - b.t) * L.dir);
-    for (let i = 0; i < list.length - 1; i++) edge(k + '-' + i, list[i].id, list[i + 1].id, [L.at(list[i].t), L.at(list[i + 1].t)], { line: k });
+  // the mine line: in at the west end of the branch past the container works and the mines, then down across the
+  // north trunk's westbound track onto its eastbound one
+  curWork = 'trunk';
+  const MINE = edge('mine', 'brIn', 'brD', [[-XB, BR], [-985, BR]], { main: () => true });
+  edge('ore-link', 'brD', on('NEB', -880, 'oreM'), [[-985, BR], [-955, BR], [-910, NT + 3], [-880, NT + 3]]);
+  curWork = null;
+  for (const [lid, L] of Object.entries(LINES)) {
+    const list = L.stops.filter((s, i, a) => a.findIndex((o) => o.id === s.id) === i).sort((a, b) => (a.t - b.t) * L.dir);
+    curWork = L.work;
+    for (let i = 0; i < list.length - 1; i++) edge(lid + '-' + i, list[i].id, list[i + 1].id, [L.at(list[i].t), L.at(list[i + 1].t)], { line: lid });
+    curWork = null;
   }
+  const PORTALS = ['N', 'M'].flatMap((tk) => [{ tk, side: 'W', edge: NODES[tk + '-in-W'].out[0] }, { tk, side: 'E', edge: NODES[tk + '-in-E'].out[0] }]);
+  const EXITS = ['N-out-E', 'N-out-W', 'M-out-E', 'M-out-W'].map((id) => NODES[id].in[0]);
   R.EDGES = EDGES; R.NODES = NODES; R.LOCKS = LOCKS; R.YARD = YARD;
 
   /* ----- conflicts: every place two routes foul each other is a lock with a zone on each edge ----- */
@@ -216,7 +263,7 @@
     for (const p of e.path.pts) { const d = (p[0] - x) ** 2 + (p[1] - z) ** 2; if (d < m) m = d; }
     return Math.sqrt(m);
   };
-  const mkLock = (kind, x, z, o) => { const k = Object.assign({ id: kind + '-' + LOCKS.length, kind, x, z, owner: null }, o); LOCKS.push(k); return k; };
+  const mkLock = (kind, x, z) => { const k = { id: kind + '-' + LOCKS.length, kind, x, z, owner: null }; LOCKS.push(k); return k; };
   (function conflicts() {
     for (const n of Object.values(NODES)) {
       // a diverge: the roads leaving it run side by side for a few metres
@@ -274,57 +321,59 @@
         }
       }
     }
-    // crossing the main line: held only while both main tracks are clear on the approach, and mainline trains are
-    // signalled to stop short of it while it is held
-    const mainZone = (e, enter, leave) => {
-      let a = 0;
-      while (a < e.len && !enter(e.path.at(a))) a += 1;
-      let b = a;
-      while (b < e.len && !leave(e.path.at(b))) b += 1;
-      const p = e.path.at(a), x = p.x;
-      const k = mkLock('main', x, p.z, { main: true, check: (tr) => R.mainClear(RZ, x - 420, x + 40, tr) && R.mainClear(RW, x - 60, x + 520, tr) });
-      e.zones.push({ k, a, b: b + 6 });
-    };
-    mainZone(EXIT, (p) => p.z < RZ + 9, (p) => p.z <= RW + 0.5);
-    mainZone(ORE, (p) => p.z > RW - 9, (p) => p.z > RZ + 6);
     for (const e of EDGES) e.zones.sort((a, b) => a.a - b.a);
   })();
 
-  // shortest way (by length) from a node to the start of an edge, keeping out of yard roads taken by other trains
-  function routeTo(fromNode, target, tr) {
-    const dist = new Map([[fromNode, 0]]), prev = new Map(), q = [fromNode];
-    while (q.length) {
-      q.sort((a, b) => dist.get(a) - dist.get(b));
-      const n = q.shift();
-      if (n === target.from) break;
+  /* ----- routing: shortest ways over built track, keeping out of yard roads taken by other trains ----- */
+  function search(from, tr) {
+    const dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
+    const push = (it) => { heap.push(it); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        while (true) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; }
+      }
+      return top;
+    };
+    heap.pop(); push([0, from]);
+    while (heap.length) {
+      const [d, n] = pop();
+      if (d > dist.get(n)) continue;
       for (const e of n.out) {
-        if (e.taken && e.taken !== tr && e !== target) continue;
-        const d = dist.get(n) + e.len;
-        if (!dist.has(e.to) || d < dist.get(e.to)) { dist.set(e.to, d); prev.set(e.to, e); q.push(e.to); }
+        if (!e.built || (e.taken && e.taken !== tr)) continue;
+        const nd = d + e.len;
+        if (!dist.has(e.to) || nd < dist.get(e.to)) { dist.set(e.to, nd); prev.set(e.to, e); push([nd, e.to]); }
       }
     }
-    if (!dist.has(target.from)) return null;
+    return { from, dist, prev };
+  }
+  // the edges from the search's start to the start of the target edge
+  function pathTo(S, target) {
+    if (!target.built || !S.dist.has(target.from)) return null;
     const list = [];
-    for (let n = target.from; n !== fromNode; n = prev.get(n).from) list.unshift(prev.get(n));
-    return { edges: list, len: dist.get(target.from) };
+    for (let n = target.from; n !== S.from; n = S.prev.get(n).from) list.unshift(S.prev.get(n));
+    return { edges: list, len: S.dist.get(target.from) };
   }
   // the edge (and offset along it) nearest a world point
-  function locate(x, z) {
+  function locate(x, z, filter) {
     let best = null;
     for (const e of EDGES) {
-      if (e.main) continue;
+      if (e.main || (filter && !filter(e))) continue;
+      if (x < e.bb[0] - 20 || x > e.bb[1] + 20 || z < e.bb[2] - 20 || z > e.bb[3] + 20) continue;
       for (let s = 0; s <= e.len; s += 1) { const p = e.path.at(s), d = (p.x - x) ** 2 + (p.z - z) ** 2; if (!best || d < best.d) best = { e, s, d }; }
     }
     return best;
   }
 
-  /* ================= building the network (the "Industrial rail" project) ================= */
+  /* ================= laying track ================= */
   function sign(lines, w, h, bg) {
     const tex = M.canvasTex(512, Math.round((512 * h) / w), (ctx) => {
-      const H = ctx.canvas.height;
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, 512, H);
+      const Hh = ctx.canvas.height;
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, 512, Hh);
       ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      lines.forEach(([text, size, y]) => { ctx.font = `800 ${size}px Inter, "Segoe UI", Arial`; ctx.fillText(text, 256, y * H); });
+      lines.forEach(([text, size, y]) => { ctx.font = `800 ${size}px Inter, "Segoe UI", Arial`; ctx.fillText(text, 256, y * Hh); });
     });
     const g = new T.Group(), b = new M.MB();
     for (const s of [-1, 1]) b.box(0.5, h + 3, 0.5, 0x9aa1c4, 0, 0, (s * (w - 0.6)) / 2);
@@ -335,50 +384,54 @@
     g.add(p);
     return g;
   }
-  // each pod is a precinct of its own: cleared ground, a border in the pod's colour and a hedge along its outer side
-  // and its far ends (open to the avenue, the highway and the rail)
-  function precinct(g, pod) {
-    const sIn = pod.A === AW ? 1 : -1, { z0, z1 } = pod;
-    W.clearTrees({ x0: pod.A - 120, x1: pod.A + 120, z0, z1 });
-    const line = [], xo = pod.A - sIn * 120, xi = pod.A + sIn * 104;
-    W.dashLine(line, xo, z0, xo, z1, z1 - z0, 0, 0.6);
-    for (const z of pod.ends) {
-      W.dashLine(line, Math.min(xo, pod.A - sIn * 10), z, Math.max(xo, pod.A - sIn * 10), z, 110, 0, 0.6);
-      W.dashLine(line, Math.min(xi, pod.A + sIn * 10), z, Math.max(xi, pod.A + sIn * 10), z, 94, 0, 0.6);
+  // signal aspects for every laid conflict: red while a train holds it, green otherwise
+  const LAMPS = [];
+  const lampGeo = new T.SphereGeometry(0.2, 8, 6), lampRed = new T.MeshBasicMaterial({ color: 0xff3b30 }), lampGreen = new T.MeshBasicMaterial({ color: 0x34c759 });
+  let lampG = null, lampR = null;
+  const lampMtx = new T.Matrix4();
+  function updateLamps() {
+    if (!lampG || lampG.instanceMatrix.count < LAMPS.length) {
+      if (lampG) WT.scene.remove(lampG, lampR);
+      const n = Math.max(64, LAMPS.length * 2);
+      lampG = new T.InstancedMesh(lampGeo, lampGreen, n); lampR = new T.InstancedMesh(lampGeo, lampRed, n);
+      lampG.frustumCulled = lampR.frustumCulled = false;
+      WT.scene.add(lampG, lampR);
     }
-    W.dashes(g, line, pod.color, 0.05);
-    // in short runs of their own, so each piece of hedge is only ever tested against what passes near it
-    let b = null, i = 0;
-    const shrub = (x, z, k) => {
-      if (k % 12 === 0) { if (b) g.add(b.mesh()); b = new M.MB(); }
-      b.blob(1.3, k % 3 ? 0x4f7d3a : 0x5c8a42, x, 1.1, z, 1.2, 0.85, 1.2, 1, 0.3, k + 1);
-    };
-    for (let z = z0 + 3; z <= z1 - 3; z += 3.2) shrub(xo - sIn * 2.5, z, i++);
-    for (const z of pod.ends) {
-      const out = z === Math.max(z0, z1) ? 2.5 : -2.5;
-      for (let x = pod.A - sIn * 14; Math.abs(x - pod.A) <= 120; x -= sIn * 3.2) shrub(x, z + out, i++);
-      for (let x = pod.A + sIn * 14; Math.abs(x - pod.A) <= 100; x += sIn * 3.2) shrub(x, z + out, i++);
+    let gi = 0, ri = 0;
+    for (const l of LAMPS) {
+      lampMtx.makeTranslation(l.x, l.y, l.z);
+      if (l.k.owner) lampR.setMatrixAt(ri++, lampMtx); else lampG.setMatrixAt(gi++, lampMtx);
     }
-    if (b) g.add(b.mesh());
+    lampG.count = gi; lampR.count = ri;
+    lampG.instanceMatrix.needsUpdate = lampR.instanceMatrix.needsUpdate = true;
   }
-  R.build = function* () {
-    R.building = true;
-    if (WT.REMOTE && WT.REMOTE.buildBranch) WT.REMOTE.buildBranch(); // the mine line the trunk is fed from
+  WT.on('frame', () => { if (LAMPS.length) updateLamps(); });
+  // Lay one works (its edges in turn, behind a track-laying machine): ballast and sleepers on the ground, a deck and
+  // piers on a viaduct, rails as long runs on the straights. The edges carry trains once the works is complete.
+  R.works = {};
+  R.layWorks = function* (work, secs) {
+    const es = EDGES.filter((e) => e.work === work && !e.built && !(e.main && e.main(e.path.at(0)) && e.main(e.path.at(e.len))));
+    if (!es.length) { EDGES.filter((e) => e.work === work).forEach((e) => (e.built = true)); return; }
+    R.works[work] = 'laying';
     const g = new T.Group();
     WT.scene.add(g);
-    R.PODS.forEach((pod) => precinct(g, pod));
-    // lay every edge in turn, off the mainline: ballast and sleepers on the ground, a deck and piers on the viaduct
     const ballast = [], sleepers = [], runs = [], deck = new M.MB();
     let total = 0;
-    for (const e of EDGES) {
-      if (e.main && e.main(e.path.at(e.len / 2)) && e.main(e.path.at(0)) && e.main(e.path.at(e.len))) continue;
-      const rb = new M.MB();
+    for (const e of es) {
+      const rb = new M.MB(), straight = e.path.maxK(0, e.len) < 1e-4;
+      if (straight) {
+        // one long rail each side
+        const p0 = e.path.at(0), p1 = e.path.at(e.len), a = p0.a, nx = -Math.sin(a), nz = Math.cos(a);
+        let y0 = 0;
+        for (let s = 0; s <= e.len; s += 8) y0 = Math.max(y0, e.yAt(s));
+        if (y0 < 0.05) for (const o of [-0.75, 0.75]) rb.boxC(e.len, 0.2, 0.16, 0x6a7194, (p0.x + p1.x) / 2 + nx * o, 0.15, (p0.z + p1.z) / 2 + nz * o, 0, -a, 0);
+      }
       for (let s = 0; s < e.len; s += 2) {
         const p = e.path.at(s), y = e.yAt(s);
         if (e.main && e.main(p)) continue;
         if (s % 18 < 2) W.clearTrees({ x0: p.x - 12, x1: p.x + 12, z0: p.z - 12, z1: p.z + 12 });
         const nx = -Math.sin(p.a), nz = Math.cos(p.a);
-        for (const o of [-0.75, 0.75]) rb.boxC(2.04, 0.2, 0.16, 0x6a7194, p.x + nx * o, y + 0.15, p.z + nz * o, 0, -p.a, 0);
+        if (!straight || y >= 0.05) for (const o of [-0.75, 0.75]) rb.boxC(2.04, 0.2, 0.16, 0x6a7194, p.x + nx * o, y + 0.15, p.z + nz * o, 0, -p.a, 0);
         if (y < 0.05) {
           if (s % 3 < 2) ballast.push({ x: p.x, z: p.z, len: 3.3, w: 4.6, rot: -p.a, at: total + s });
           sleepers.push({ x: p.x, z: p.z, len: 0.45, w: 2.9, rot: -p.a, at: total + s }, { x: p.x + Math.cos(p.a), z: p.z + Math.sin(p.a), len: 0.45, w: 2.9, rot: -p.a, at: total + s + 1 });
@@ -394,80 +447,102 @@
       runs.push({ m, at: total, e });
       total += e.len;
     }
-    // a signal at every place a train may be held: a mast beside the track ahead of each conflict
-    const lamps = [], mastMeshes = [];
-    for (const e of EDGES) {
-      const masts = new M.MB();
+    // a signal mast ahead of every conflict a train may be held at, in short runs of their own so each piece is only
+    // ever tested against what passes near it
+    const masts = [], lamps = [];
+    for (const e of es) {
+      const mb = new M.MB();
       for (const z of e.zones) {
-        if (z.a < 3 && !z.k.main) continue; // (the diverges: held where the line reaches them)
+        if (z.a < 3) continue; // (the diverges: held where the line reaches them)
         const s = Math.max(0, z.a - 2), p = e.path.at(s);
-        if (e.main && e.main(p)) continue;
         const nx = -Math.sin(p.a), nz = Math.cos(p.a), x = p.x + nx * 2.6, zz = p.z + nz * 2.6, y = e.yAt(s);
-        masts.box(0.22, 4.2, 0.22, 0x4a5578, x, y, zz);
-        masts.box(0.5, 0.9, 0.5, 0x2b2f3d, x, y + 4.2, zz);
+        mb.box(0.22, 4.2, 0.22, 0x4a5578, x, y, zz);
+        mb.box(0.5, 0.9, 0.5, 0x2b2f3d, x, y + 4.2, zz);
         lamps.push({ x, y: y + 4.65, z: zz, k: z.k });
       }
-      if (!masts.p.length) continue;
-      const mm = masts.mesh();
+      if (!mb.p.length) continue;
+      const mm = mb.mesh();
       mm.visible = false;
       g.add(mm);
-      mastMeshes.push(mm);
+      masts.push(mm);
     }
-    const lampGeo = new T.SphereGeometry(0.2, 8, 6), red = new T.MeshBasicMaterial({ color: 0xff3b30 }), green = new T.MeshBasicMaterial({ color: 0x34c759 });
-    const lampMesh = new T.InstancedMesh(lampGeo, green, Math.max(1, lamps.length)), redMesh = new T.InstancedMesh(lampGeo, red, Math.max(1, lamps.length));
-    lampMesh.count = redMesh.count = 0;
-    g.add(lampMesh, redMesh);
     const bm = W.dashes(g, ballast, W.COL.ballast, 0.028), sm = W.dashes(g, sleepers, 0xa49c90, 0.06);
-    const dm = deck.mesh();
-    dm.visible = false;
-    g.add(dm);
+    const dm = deck.p.length ? deck.mesh() : null;
+    if (dm) { dm.visible = false; g.add(dm); }
     bm.count = sm.count = 0;
-    const layer = M.trackLayer();
+    const layer = (R.layer = M.trackLayer()); // (the machine at work, for the camera)
     WT.scene.add(layer);
     let bi = 0, si = 0;
-    yield* WT.tween(40, (k) => {
+    yield* WT.tween(secs || Math.max(8, Math.min(60, total / 120)), (k) => {
       const d = total * k;
       while (bi < ballast.length && ballast[bi].at <= d) bi++;
       while (si < sleepers.length && sleepers[si].at <= d) si++;
       bm.count = bi; sm.count = si;
       let cur = runs[0];
       for (const r of runs) { r.m.visible = r.at <= d; if (r.at <= d) cur = r; }
-      dm.visible = k > 0.2;
+      if (dm) dm.visible = k > 0.2;
       const p = cur.e.path.at(Math.min(cur.e.len, d - cur.at));
       layer.position.set(p.x, cur.e.yAt(Math.min(cur.e.len, d - cur.at)), p.z); layer.rotation.y = -p.a;
     });
     bm.count = ballast.length; sm.count = sleepers.length;
     runs.forEach((r) => (r.m.visible = true));
-    dm.visible = true;
-    mastMeshes.forEach((m) => (m.visible = true));
+    if (dm) dm.visible = true;
+    masts.forEach((m) => (m.visible = true));
     WT.scene.remove(layer);
-    // signal aspects: red while another train holds the conflict beyond, green otherwise
-    const mtx = new T.Matrix4();
-    WT.on('frame', () => {
-      let gi = 0, ri = 0;
-      for (const l of lamps) {
-        mtx.makeTranslation(l.x, l.y, l.z);
-        if (l.k.owner) redMesh.setMatrixAt(ri++, mtx); else lampMesh.setMatrixAt(gi++, mtx);
-      }
-      lampMesh.count = gi; redMesh.count = ri;
-      lampMesh.instanceMatrix.needsUpdate = redMesh.instanceMatrix.needsUpdate = true;
-    });
-    // the network's name board beside the junction of the trunk and the spine, facing the pods
-    const board = sign([['INDUSTRIAL RAIL', 60, 0.36], ['Trunk · spine · station loops', 28, 0.72]], 16, 5, '#2f56e0');
+    if (R.layer === layer) R.layer = null;
+    LAMPS.push(...lamps);
+    EDGES.filter((e) => e.work === work).forEach((e) => (e.built = true));
+    R.works[work] = 'built';
+  };
+  R.workBuilt = (work) => R.works[work] === 'built';
+  // the trunks (and the mine line's link): the first thing ever built, before any block
+  R.buildTrunk = function* () {
+    if (WT.REMOTE && WT.REMOTE.buildBranch) WT.REMOTE.buildBranch();
+    yield* R.layWorks('trunk', 70);
+    const board = sign([['RIVERSIDE RAIL GRID', 52, 0.36], ['Trunks · spines · station loops', 28, 0.72]], 18, 5, '#2f56e0');
     board.rotation.y = -Math.PI / 2;
-    board.position.set(-1290, 0, -572);
-    g.add(board);
-    R.built = true; R.building = false;
+    board.position.set(-60, 0, MT + 26);
+    WT.scene.add(board);
+    R.built = true; W.railBuilt = true;
+  };
+  R.buildSpine = function* (i) { yield* R.layWorks('spine' + i, 45); R.startShuttles(); };
+  R.spineFor = (b) => b.spine;
+  R.spineBuilt = (i) => R.workBuilt('spine' + i);
+
+  /* ================= blocks on the ground ================= */
+  // each block is a precinct of its own: a border in its colour, and a hedge along its sides except where its
+  // station loop runs out to the spine
+  R.precinct = function (b) {
+    if (b.fenced) return;
+    b.fenced = true;
+    const g = new T.Group(), A = b.A, z0 = b.z0 - 4, z1 = b.z1 + 4, line = [];
+    for (const x of [A - 118, A + 118]) W.dashLine(line, x, z0, x, z1, z1 - z0, 0, 0.6);
+    W.dashLine(line, A - 118, z0, A + 118, z0, 236, 0, 0.6); W.dashLine(line, A - 118, z1, A + 118, z1, 236, 0, 0.6);
+    W.dashes(g, line, b.color, 0.05);
+    let mb = null, i = 0;
+    const shrub = (x, z) => { if (i % 12 === 0) { if (mb) g.add(mb.mesh()); mb = new M.MB(); } mb.blob(1.3, i % 3 ? 0x4f7d3a : 0x5c8a42, x, 1.1, z, 1.2, 0.85, 1.2, 1, 0.3, i + 1); i++; };
+    for (const sd of [-1, 1]) {
+      if (b.stationPlot && sd === b.sSt) continue;
+      for (let z = z0 + 3; z <= z1 - 3; z += 3.2) shrub(A + sd * 121, z);
+    }
+    // across the far end (away from the highway), and across the near end either side of the road's turning head
+    const zf = b.h < 0 ? z0 - 3 : z1 + 3, zn = b.h < 0 ? z1 + 3 : z0 - 3;
+    if (!b.port) for (let x = A - 118; x <= A + 118; x += 3.2) shrub(x, zf);
+    for (let x = A - 118; x <= A + 118; x += 3.2) if (Math.abs(x - A) > 13) shrub(x, zn);
+    if (mb) g.add(mb.mesh());
+    W.groundText(g, 'BLOCK ' + b.key, A + (b.sSt || 1) * 10, b.h < 0 ? b.z0 + 4 : b.z1 - 4, 16, 6, hex(b.color), b.h < 0 ? Math.PI : 0, 80);
+    WT.scene.add(g);
   };
 
-  /* ================= pod rail depot ================= */
+  /* ================= block station ================= */
   // Plot-local layout: entry road along z 46, a bypass lane at x 54 with two crane bays at x 62, the box yard
-  // (four rows) and the through track at x 104 under one rail-mounted gantry spanning x 48–114, travelling z −30…30.
-  const BAYS = [12, -20], BAY_X = 62, BYP_X = 54, TRACK_X = 104, XC = 81, SPAN = 66, SAFE = 10.5, SPEED = 6, U_MAX = 30;
-  const ROWS = [74, 80, 86, 92], COLS = [-26, -13, 0, 13, 26];
-  class RingDepot extends WT.Facility {
+  // (five rows of six) and the through track at x 104 under one rail-mounted gantry spanning x 48–114, travelling
+  // z −33…33.
+  const BAYS = [12, -20], BAY_X = 62, BYP_X = 54, TRACK_X = 104, XC = 81, SPAN = 66, SAFE = 10.5, SPEED = 16, U_MAX = 33;
+  const ROWS = [68, 74, 80, 86, 92], COLS = [-32.5, -19.5, -6.5, 6.5, 19.5, 32.5];
+  class BlockStation extends WT.Facility {
     constructor(pod) {
-      super('Ring depot', 'RD', `Pod ${pod.key} Rail Depot`, pod.depotPlot);
+      super('Block station', 'ST', `Block ${pod.key} Station`, pod.stationPlot);
       this.pod = pod;
       pod.depot = this;
       this.docks = BAYS.map((z, i) => ({ n: i + 1, x: BAY_X, z, truck: null, job: null, ops: ['pick', 'drop'] }));
@@ -506,7 +581,7 @@
       W.flat(g, BYP_X + 3, 6, W.COL.road, (BYP_X + 3) / 2, -46, 0.029);
       W.flat(g, 6, 98, W.COL.road, BYP_X, 0, 0.029);
       W.flat(g, 6, 52, W.COL.road, BAY_X, -5, 0.03);
-      W.flat(g, 30, 66, W.COL.concrete, 85, 0, 0.027);
+      W.flat(g, 36, 80, W.COL.concrete, 82, 0, 0.027);
       const yel = [], white = [];
       for (const d of this.docks) W.dashRect(yel, BAY_X, d.z - 0.6, 4.4, 15.6, 1, 0.5, 0.22);
       for (const s of this.slots) W.dashRect(yel, s.x, s.z, 3.2, 12.4, 1, 0.6, 0.2);
@@ -515,13 +590,13 @@
       for (let z = 40; z > -44; z -= 14) white.push({ x: BYP_X, z, len: 2.2, w: 0.5, rot: Math.PI / 2 });
       W.dashes(g, yel, W.COL.yellow, 0.062);
       W.dashes(g, white, 0xffffff, 0.06);
-      W.groundText(g, 'POD ' + pod.key, 66, 34, 10, 5, hex(pod.color), Math.PI / 2, 90);
+      W.groundText(g, 'BLOCK ' + pod.key, 66, 34, 10, 5, hex(pod.color), Math.PI / 2, 90);
       const b = new M.MB();
-      for (const x of [XC - SPAN / 2, XC + SPAN / 2]) b.box(0.5, 0.15, 72, 0x7a81a4, x, 0.04, 0); // crane rails
+      for (const x of [XC - SPAN / 2, XC + SPAN / 2]) b.box(0.5, 0.15, 80, 0x7a81a4, x, 0.04, 0); // crane rails
       for (const z of [-24, 0, 24]) { b.box(0.25, 6, 0.25, 0x9aa1c4, 100.9, 0, z); b.box(1.6, 0.3, 0.5, 0xeef0fa, 100.2, 6, z); } // platform lamps
       S.add(b.mesh());
       M.block(S, { x: 20, z: 0, w: 14, d: 12, h: 8, trim: pod.color }); // depot office
-      const board = sign([['POD ' + pod.key, 120, 0.34], [pod.name.toUpperCase(), 52, 0.66], ['Tier ' + pod.tier + ' · ' + WT.SUP.TIER_NAME[pod.tier] + ' · rail depot', 26, 0.87]], 9, 6, hex(pod.color));
+      const board = sign([['BLOCK ' + pod.key, 104, 0.34], [pod.name.toUpperCase(), 52, 0.66], [(pod.tier ? 'Tier ' + pod.tier + ' · ' + WT.SUP.TIER_NAME[pod.tier] : 'Sea freight') + ' · station', 26, 0.87]], 9, 6, hex(pod.color));
       board.position.set(5, 0, 20);
       S.add(board);
       // one rail-mounted gantry: its rails run along local z, so it is mounted in a frame whose x is the depot's z
@@ -533,11 +608,12 @@
       c.group.position.set(0, 0, -XC);
       rf.add(c.group);
       this.crane = Object.assign(c, { id: 'RMG-' + pod.key, task: 'Idle', lifts: 0, trainBox: false });
+      WT.spawn(R.layWorks('st' + pod.key, 16)); // its loop off the spine goes down with it
     }
     activate() {
       super.activate();
       // where on the network the platform is: trains stop with their wagons centred on it
-      const w = this.world(TRACK_X, 0, 0), at = locate(w.x, w.z);
+      const w = this.world(TRACK_X, 0, 0), at = locate(w.x, w.z, (e) => e.station === this.pod.key);
       this.stopEdge = at.e; this.stopOff = at.s;
       WT.spawn(this.craneWorker());
       R.startShuttles();
@@ -573,7 +649,7 @@
       s.items.push(c);
       c.loc = this.id + ' · Yard';
     }
-    // an empty of the right kind for this material, sitting idle in this pod's pool
+    // an empty of the right kind for this material, sitting idle in this block's pool
     findEmpty(mat) {
       const tank = WT.SUP.MAT[mat].pack === 'tanker', open = WT.SUP.openFor(mat);
       for (const s of this.slots) {
@@ -585,7 +661,8 @@
     // a pool keeps three idle empties of a kind; more go back to the leasing pool
     trimPool(c) {
       const same = this.slots.flatMap((s) => s.items).filter((x) => this.idle(x) && x.tank === c.tank && x.open === c.open);
-      if (same.length <= 3) return;
+      const all = this.slots.flatMap((s) => s.items).filter((x) => this.idle(x));
+      if (same.length <= 2 && all.length <= 3) return;
       const s = this.slots.find((q) => this.topOf(q) === c);
       if (!s) return;
       s.items.pop();
@@ -602,9 +679,9 @@
       }
       if (po && po.ring) {
         c.ringTo = po.ring.to; c.ringHome = c.ringHome || this;
-        c.status = 'Awaiting pod shuttle';
+        c.status = 'Awaiting block shuttle';
         S.note(c, `Dropped at ${this.id} for ${c.ringTo.id}`);
-        S.ev(po, `At ${this.id} · awaiting pod shuttle → ${c.ringTo.id}`);
+        S.ev(po, `At ${this.id} · awaiting block shuttle → ${c.ringTo.id}`);
         if (t.po === po) { t.po = null; t.cargo = null; }
         return;
       }
@@ -690,18 +767,19 @@
       return tr.cars.some((k) => k.cont && k.cont.ringTo === this) || (tr.cars.some((k, i) => i && !k.cont) && this.outbound(tr).length > 0);
     }
     *trainCall(tr) {
+      if (this.claim2 === tr) { this.claim2 = null; this.claim = tr; }
       this.train = tr; tr.at = this;
       tr.status = 'Working at ' + this.id;
       R.stats.calls++;
       WT.emit('event', { kind: 'train', ent: tr, weight: 2 });
-      // pre-advice: the boxes for this pod are released to the movers as the train pulls in
+      // pre-advice: the boxes for this block are released to the movers as the train pulls in
       for (const car of tr.cars) {
         const c = car.cont;
         if (c && c.ringTo === this && c.full && c.po && !c.advised) { c.advised = true; c.at = this; c.hold = true; c.status = 'On train at ' + this.id; WT.SUP.grounded(c.po, this.id); }
       }
       const job = { train: tr, label: 'Working ' + tr.id, plan: () => this.trainLift(tr) };
       this.jobs.push(job);
-      // boxes for this pod always come off (their yard room was booked with them); loading gives up after a while
+      // boxes for this block always come off (their yard room was booked with them); loading gives up after a while
       const t0 = WT.sim.minutes;
       while (!job.done && (WT.sim.minutes - t0 < 30 || tr.cars.some((k) => k.cont && k.cont.ringTo === this))) yield;
       job.done = true;
@@ -710,7 +788,7 @@
       if (this.claim === tr) this.claim = null;
     }
     trainLift(tr) {
-      // everything for this pod comes off first ...
+      // everything for this block comes off first ...
       const off = tr.cars.find((k) => k.cont && k.cont.ringTo === this && !k.cont.lifting);
       if (off) {
         const c = off.cont, s = this.slotFor(c);
@@ -738,9 +816,9 @@
           car.g.userData.slot.attach(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0);
           car.cont = c; c.loc = tr.id;
           if (c.ringTo === R.EXPORT) { c.status = 'On industrial freight'; WT.SUP.cratesRailed++; R.stats.exported++; WT.SUP.note(c, `Loaded on ${tr.id} at ${this.id} for export`); return; }
-          c.status = c.full ? 'On pod shuttle' : 'Empty · on pod shuttle';
+          c.status = c.full ? 'On block shuttle' : 'Empty · on block shuttle';
           WT.SUP.note(c, `Loaded on ${tr.id} at ${this.id} → ${c.ringTo.id}`);
-          if (c.full && c.po) WT.SUP.ev(c.po, `On pod shuttle · ${tr.id} → ${c.ringTo.id}`);
+          if (c.full && c.po) WT.SUP.ev(c.po, `On block shuttle · ${tr.id} → ${c.ringTo.id}`);
         } };
     }
 
@@ -749,7 +827,8 @@
       const c = this.crane;
       while (true) {
         let pick = null;
-        const order = this.jobs.filter((j) => !j.done).sort((a, b) => (b.truck ? 1 : 0) - (a.truck ? 1 : 0));
+        // the train at the platform first (it holds the platform), then the movers
+        const order = this.jobs.filter((j) => !j.done).sort((a, b) => (b.train ? 1 : 0) - (a.train ? 1 : 0));
         for (const j of order) {
           const lift = j.plan();
           if (lift === 'skip') { j.done = true; continue; }
@@ -783,37 +862,33 @@
       const pool = items.filter((c) => this.idle(c)).length, out = items.filter((c) => c.ringTo && c.ringTo !== this && c.ringTo !== R.EXPORT).length;
       const crates = items.filter((c) => c.ringTo === R.EXPORT).length, wait = items.filter((c) => c.full && !c.ringTo).length;
       return this.cardBase({
-        kicker: `Facility · Rail depot · Pod ${this.pod.key}`, icon: '🚉', sub: `Pod ${this.pod.key} · ${this.pod.name} — ${this.pod.plants.filter(Boolean).join(', ')}`,
+        kicker: `Facility · Block station · Block ${this.pod.key}`, icon: '🚉', sub: `Block ${this.pod.key} · ${this.pod.name}${this.pod.plants.length ? ' — ' + this.pod.plants.join(', ') : ''}`,
         where: this.train ? this.train.id + ' at the platform' : 'Platform clear',
-        rows: [['To other pods', String(out)], ['Crates for export', String(crates)], ['Awaiting a mover', String(wait)], ['Empties in pool', String(pool)], ['Inbound by rail', String(this.incoming)],
-          ['Yard', `${items.length} boxes · ${this.freeSlots()} of ${this.slots.length} slots free`], ['Gantry', `${this.crane.carry ? 'Lifting' : this.crane.task} · ${this.crane.lifts} lifts`],
+        rows: [['To other blocks', String(out)], ['Crates for export', String(crates)], ['Awaiting a mover', String(wait)], ['Empties in pool', String(pool)], ['Inbound by rail', String(this.incoming)],
+          ['Yard', `${items.length} boxes · ${this.freeSlots()} of ${this.slots.length} slots free`], ['Gantry', this.crane ? `${this.crane.carry ? 'Lifting' : this.crane.task} · ${this.crane.lifts} lifts` : 'Being erected'],
           ['Truck bays', this.docks.map((d) => (d.truck ? '■' : '□')).join(' ')], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
       });
     }
   }
-  WT.RingDepot = RingDepot;
+  WT.BlockStation = BlockStation;
+  WT.RingDepot = BlockStation; // (older name)
 
   /* ================= trains on the network ================= */
   // every car of every train, mainline ones included, for spacing
   R.allCars = () => [...WT.trains, ...R.trains].flatMap((t) => t.cars.map((c) => ({ t, p: c.g.position })));
   // is a stretch of a main track clear of every train (mainline trains and ours)?
   R.mainClear = (z, x0, x1, except) => R.allCars().every(({ t, p }) => t === except || Math.abs(p.z - z) > 3 || p.x < x0 || p.x > x1);
-  // a crossing of the main held by the network: no new mainline train may start near it ...
-  R.crossingHeld = (x) => LOCKS.some((k) => k.main && k.owner && Math.abs(x - k.x) < 450);
-  // ... and one already running stops at its signal: the distance to the nearest held crossing ahead (or Infinity)
-  R.signalAhead = (hx, dir) => {
-    let g = Infinity;
-    for (const k of LOCKS) if (k.main && k.owner) { const d = (k.x - hx) * dir; if (d > 0) g = Math.min(g, d); }
-    return g;
-  };
+  // (there is no mainline any more: nothing of ours ever holds one)
+  R.crossingHeld = () => false;
+  R.signalAhead = () => Infinity;
   let seqS = 11, seqF = 701;
   class NetTrain extends WT.Entity {
     constructor(kind, n, ore) {
       super();
       this.kind = 'train';
       this.role = kind; // 'shuttle' or 'freight'
-      this.id = kind === 'shuttle' ? 'PS-' + seqS++ : (ore ? 'OR-' : 'IF-') + seqF++;
-      this.operator = kind === 'shuttle' ? 'WareTrack Pod Shuttle' : ore ? 'Ridgeline Mining · ore to the pods' : 'WareTrack Industrial Freight';
+      this.id = kind === 'shuttle' ? 'BS-' + seqS++ : (ore ? 'OR-' : 'FR-') + seqF++;
+      this.operator = kind === 'shuttle' ? 'WareTrack Block Shuttle' : ore ? 'Ridgeline Mining · ore to the blocks' : 'WareTrack Rail Freight';
       this.status = 'Running';
       const lv = kind === 'shuttle' ? [0x2aa198, 0xf6f7fd, 'cab'] : ore ? [0x9c5d47, 0xf0b429, 'hood'] : [0x4a5578, 0xf0b429, 'hood'];
       this.cars = [{ g: M.loco(...lv) }];
@@ -845,7 +920,7 @@
       this.cars.forEach((c) => { WT.scene.remove(c.g); WT.pickables.delete(c.g); if (c.cont) WT.unregister(c.cont); });
       this.holds.forEach((h) => { if (h.k.owner === this) h.k.owner = null; });
       for (const s of YARD) if (s.taken === this) s.taken = null;
-      for (const d of depots()) if (d.claim === this) d.claim = null;
+      for (const d of depots()) { if (d.claim === this) d.claim = null; if (d.claim2 === this) d.claim2 = null; }
       WT.unregister(this);
       R.trains.splice(R.trains.indexOf(this), 1);
     }
@@ -853,16 +928,16 @@
       const boxes = this.cars.filter((c) => c.cont);
       const to = (c) => (c.cont.ringTo ? c.cont.ringTo.id : c.cont.contents ? c.cont.contents.name : '—');
       return {
-        kicker: (this.role === 'shuttle' ? 'Pod shuttle · ' : this.ore ? 'Ore train · ' : 'Industrial freight · ') + this.operator, title: this.id,
-        sub: this.role === 'shuttle' ? 'Carries boxes between the pods' : this.ore ? `${WT.SUP.MAT[this.ore.site.mat].name} from ${this.ore.site.id} to the pods` : 'Imports to the pods, product crates out',
-        icon: '🚆', iconBg: this.role === 'shuttle' ? '#7fe0d6' : '#ffd479', status: this.status, statusTone: WT.toneFor(this.status), where: this.at ? this.at.id + ' platform' : this.parked ? 'Stabling yard · road ' + this.parked.siding : 'Industrial rail network',
+        kicker: (this.role === 'shuttle' ? 'Block shuttle · ' : this.ore ? 'Ore train · ' : 'Freight · ') + this.operator, title: this.id,
+        sub: this.role === 'shuttle' ? 'Carries boxes between blocks' : this.ore ? `${WT.SUP.MAT[this.ore.site.mat].name} from ${this.ore.site.id} to the blocks` : 'Imports to the blocks, product crates out',
+        icon: '🚆', iconBg: this.role === 'shuttle' ? '#7fe0d6' : '#ffd479', status: this.status, statusTone: WT.toneFor(this.status), where: this.at ? this.at.id + ' platform' : this.parked ? 'Stabling yard · road ' + this.parked.siding : 'Rail grid',
         rows: [['Consist', `1 loco + ${this.cars.length - 1} container flats`], ['Boxes aboard', boxes.length ? boxes.map((c) => `${c.cont.id} → ${to(c)}`).join(' · ') : 'None'],
-          ['Next stop', this.route && this.route.stop ? this.route.stop.id : this.route && this.route.exit ? 'Mainline · leaving the network' : '—'], ['Speed', Math.round(this.v * 3.6) + ' km/h']],
+          ['Next stop', this.route && this.route.stop ? this.route.stop.id : this.route && this.route.exit ? 'Portal · leaving the map' : '—'], ['Speed', Math.round(this.v * 3.6) + ' km/h']],
       };
     }
-    label() { return this.id + (this.role === 'shuttle' ? ' · Pod shuttle' : this.ore ? ' · Ore train' : ' · Industrial freight'); }
+    label() { return this.id + (this.role === 'shuttle' ? ' · Block shuttle' : this.ore ? ' · Ore train' : ' · Freight'); }
   }
-  const depots = () => WT.facilities.filter((f) => f.type === 'Ring depot' && f.active);
+  const depots = () => WT.facilities.filter((f) => f.type === 'Block station' && working(f));
 
   // A route is one path from 60 m behind the head (so the cars trail on real track) through a list of edges.
   // pos: { e, o } where the head is now; plan: edges to follow after the current one; end: offset on the last edge
@@ -914,42 +989,54 @@
     return { e: segs[0].e, o: segs[0].o0 };
   }
   // route from the head to a depot's platform (wagons centred on it), or null
-  function routeToDepot(tr, d) {
+  function routeToDepot(tr, d, S) {
     const pos = headPos(tr), n = tr.cars.length - 1, stopO = d.stopOff + 6.5 * (n + 1);
     if (pos.e === d.stopEdge && stopO > pos.o + 1) return { pos, plan: [], end: stopO, len: stopO - pos.o };
-    const r = routeTo(pos.e.to, d.stopEdge, tr);
+    const r = pathTo(S || search(pos.e.to, tr), d.stopEdge);
     if (!r) return null;
     return { pos, plan: [...r.edges, d.stopEdge], end: stopO, len: pos.e.len - pos.o + r.len + stopO };
   }
   // the nearest depot this train has work at, leaving alone any platform another train is booked into
   function findJob(tr) {
     let best = null;
+    const S = search(headPos(tr).e.to, tr), carrying = delivering(tr);
     for (const d of depots()) {
       if (!d.stopEdge) continue;
       const mine = tr.cars.some((k) => k.cont && k.cont.ringTo === d);
       if ((d === tr.lastDepot && !mine) || !d.hasWorkFor(tr)) continue;
       // trains holding boxes for a busy platform queue for it, and go first once it is free
       const q = (d.queue = (d.queue || []).filter((t) => R.trains.includes(t) && t.cars.some((k) => k.cont && k.cont.ringTo === d)));
-      if (d.claim && d.claim !== tr && R.trains.includes(d.claim)) { if (mine && !q.includes(tr)) q.push(tr); continue; }
+      let wait = false;
+      if (d.claim && d.claim !== tr && R.trains.includes(d.claim)) {
+        // the loop holds one short train behind the one on the platform
+        const c2 = d.claim2 && d.claim2 !== tr && R.trains.includes(d.claim2);
+        if (c2 || tr.cars.length > 6) { if (mine && !q.includes(tr)) q.push(tr); continue; }
+        wait = true;
+      }
       if (q.length && q[0] !== tr) continue;
-      const r = routeToDepot(tr, d);
-      if (r && (!best || r.len < best.r.len)) best = { d, r };
+      const r = routeToDepot(tr, d, S);
+      // boxes aboard come off before more go on: a stop only to collect counts as three times as far while carrying
+      const score = r && r.len * (!mine && carrying ? 3 : 1);
+      if (r && (!best || score < best.score)) best = { d, r, wait, score };
     }
     return best;
   }
   const delivering = (tr) => tr.cars.some((k) => k.cont && k.cont.ringTo && k.cont.ringTo !== R.EXPORT);
+  // out to the nearest portal
   function exitRoute(tr) {
     const pos = headPos(tr);
-    if (pos.e === EXIT) { makeRoute(tr, pos, [], undefined, { exit: true }); return true; }
-    const r = routeTo(pos.e.to, EXIT, tr);
-    if (!r) return false;
-    makeRoute(tr, pos, [...r.edges, EXIT], undefined, { exit: true });
+    if (EXITS.includes(pos.e)) { makeRoute(tr, pos, [], undefined, { exit: true }); return true; }
+    const S = search(pos.e.to, tr);
+    let best = null;
+    for (const x of EXITS) { const r = pathTo(S, x); if (r && (!best || r.len < best.r.len)) best = { x, r }; }
+    if (!best) return false;
+    makeRoute(tr, pos, [...best.r.edges, best.x], undefined, { exit: true });
     return true;
   }
   // a yard road short of the conflicts at either end of it
   const parkAt = (sd) => Math.min(...sd.zones.filter((z) => z.b > sd.len).map((z) => z.a), sd.len) - 8;
   // a yard road nobody else has taken or is about to run through
-  const roadFree = (sd, tr) => (!sd.taken || sd.taken === tr) && !R.trains.some((t) => t !== tr && t.route && t.route.segs.some((sg) => sg.e === sd && !sg.hist));
+  const roadFree = (sd, tr) => sd.built && (!sd.taken || sd.taken === tr) && !R.trains.some((t) => t !== tr && t.route && t.route.segs.some((sg) => sg.e === sd && !sg.hist));
   function* stable(tr, sd) {
     tr.parked = sd; tr.lastDepot = null;
     R.stats.stabled++;
@@ -959,13 +1046,13 @@
   }
   // nothing to do: into the nearest free yard road to wait there
   function park(tr) {
-    const pos = headPos(tr);
+    const pos = headPos(tr), S = search(pos.e.to, tr);
     let best = null;
     for (const sd of YARD) {
       if (!roadFree(sd, tr)) continue;
       const end = parkAt(sd);
       if (pos.e === sd) { if (end > pos.o - 1) best = { sd, pos, plan: [], end: Math.max(end, pos.o), len: 0 }; break; }
-      const r = routeTo(pos.e.to, sd, tr);
+      const r = pathTo(S, sd);
       if (r && (!best || r.len < best.len)) best = { sd, pos, plan: [...r.edges, sd], end, len: r.len };
     }
     if (!best) return false;
@@ -974,17 +1061,39 @@
     return true;
   }
   function* pause() { yield* WT.sleep(1); }
+  function* dwell(tr, d) {
+    d.claim = tr;
+    // (as long as half a working hour: work turns up quickly, the stabling yard is a long way off)
+    for (let i = 0; i < 60; i++) {
+      tr.status = 'Waiting for work at ' + d.id;
+      if (d.hasWorkFor(tr)) yield* d.trainCall(tr);
+      d.claim = tr;
+      // off as soon as there is work elsewhere, or someone else needs this platform
+      if (findJob(tr) || R.trains.some((t) => t !== tr && (d.claim2 === t || t.cars.some((k) => k.cont && k.cont.ringTo === d)))) break;
+      yield* WT.sleep(0.5);
+    }
+    if (d.claim === tr) d.claim = null;
+  }
   // pick the next move: the ore run first, then the nearest depot with work, else out (freight) or to the yard
   function plan(tr) {
     if (tr.ore && tr.ore.stage < 2) { oreLeg(tr); return; }
     const job = findJob(tr);
     if (job) {
-      job.d.claim = tr;
+      tr.dwelt = false;
+      if (job.wait) job.d.claim2 = tr; else job.d.claim = tr;
       job.d.queue = (job.d.queue || []).filter((t) => t !== tr);
       makeRoute(tr, job.r.pos, job.r.plan, job.r.end, { stop: { id: job.d.id, d: job.d, call: () => job.d.trainCall(tr) } });
       return;
     }
     if (tr.role === 'freight' && !delivering(tr) && exitRoute(tr)) return;
+    // a shuttle that has just worked a platform waits there a little for the next box before heading for the yard
+    const ld = tr.lastDepot, here = headPos(tr);
+    if (tr.role === 'shuttle' && ld && !tr.dwelt && here.e === ld.stopEdge && (!ld.claim || ld.claim === tr)) {
+      tr.dwelt = true;
+      makeRoute(tr, here, [], here.o, { stop: { id: ld.id, d: ld, call: () => dwell(tr, ld) } });
+      return;
+    }
+    tr.dwelt = false;
     if (park(tr)) return;
     // nowhere to go just now: stand and look again
     const pos = headPos(tr);
@@ -1009,9 +1118,9 @@
       if (dt <= 0) { yield; continue; }
       const rt = tr.route, n = tr.cars.length - 1;
       const onMain = rt.segs.some((sg) => sg.e.main && tr.s >= sg.s0 && tr.s <= sg.s1 && sg.e.main(rt.path.at(tr.s)));
-      let target = onMain ? 20 : 16;
+      let target = onMain ? 20 : 22;
       const k = rt.path.maxK(tr.s, tr.s + 40);
-      if (k > 1e-4) target = Math.min(target, Math.sqrt(1.3 / k));
+      if (k > 1e-4) target = Math.min(target, Math.sqrt(2.6 / k)); // (junction curves at about 27 km/h)
       const endS = rt.stop ? rt.len : rt.len + 13 * (n + 2);
       if (rt.stop) target = Math.min(target, Math.sqrt(2 * 0.8 * Math.max(0, rt.len - tr.s)) + 0.25);
       // spacing behind whatever is ahead
@@ -1039,9 +1148,9 @@
           }
         }
       }
-      tr.v = Math.max(0, tr.v + WT.clamp(target - tr.v, -2.4 * dt, 1.1 * dt));
+      tr.v = Math.max(0, tr.v + WT.clamp(target - tr.v, -2.4 * dt, 1.5 * dt));
       tr.s = Math.min(tr.s + tr.v * dt, endS);
-      tr.status = tr.why || (tr.v < 0.3 ? 'Waiting · train ahead' : rt.exit ? 'Leaving for the mainline' : rt.stop ? 'Bound for ' + rt.stop.id : 'Running');
+      tr.status = tr.why || (tr.v < 0.3 ? 'Waiting · train ahead' : rt.exit ? 'Leaving the map' : rt.stop ? 'Bound for ' + rt.stop.id : 'Running');
       tr.place();
       if (rt.stop && tr.s >= rt.len - 0.05) {
         tr.v = 0;
@@ -1059,44 +1168,51 @@
   }
 
   /* ================= running the network ================= */
-  // pod shuttles: two once two depots work, a third with five; each starts from a yard road
+  // block shuttles: two once two stations work, one more for every two after that; each starts from a yard road
   R.startShuttles = function () {
     if (!R.built) return;
-    const n = depots().length, want = n >= 2 ? Math.min(3, 1 + Math.floor(n / 2)) : 0;
+    const n = depots().length, want = n >= 2 ? Math.min(10, n + 2) : 0;
     while (R.trains.filter((t) => t.role === 'shuttle').length < want) {
       const sd = YARD.find((s) => roadFree(s, null));
       if (!sd) return;
-      const tr = new NetTrain('shuttle', 4), end = parkAt(sd);
+      const tr = new NetTrain('shuttle', 5), end = parkAt(sd);
       tr.route = null;
       sd.taken = tr;
       makeRoute(tr, { e: sd, o: end - 0.5 }, [], end, { stop: { id: 'Stabling yard', call: () => stable(tr, sd) } });
       tr.s = 0;
       tr.place();
-      WT.log(`🚆 Pod shuttle ${tr.id} enters service from the stabling yard`, 'blue', true);
+      WT.log(`🚆 Block shuttle ${tr.id} enters service from the stabling yard`, 'blue', true);
       WT.spawn(runNet(tr));
     }
   };
   const freights = () => R.trains.filter((t) => t.role === 'freight');
-  // industrial freight: brings pod imports in from the mainline, takes product crates out
+  // a portal's first few hundred metres in are clear of every train
+  const portalClear = (p) => {
+    if (!p.edge.built) return false;
+    const a = p.edge.path.at(0), dir = p.side === 'W' ? 1 : -1;
+    return R.allCars().every(({ p: q }) => Math.abs(q.z - a.z) > 3 || (q.x - a.x) * dir < -60 || (q.x - a.x) * dir > 480);
+  };
+  // freight: brings the blocks' imports in from a portal at the map edge, takes product crates out
   function crates() { return depots().reduce((n, d) => n + d.outbound({ role: 'freight' }).length, 0); }
   function dispatchFreight() {
     const S = WT.SUP, Rm = WT.REMOTE;
-    if (!R.built || !W.railBuilt || freights().filter((t) => !t.ore).length >= 2 || freights().length >= 3) return;
+    if (!R.built || freights().filter((t) => !t.ore).length >= 4 || freights().length >= 5) return;
     const room = new Map();
-    const want = S.takeManifest('rail', 6, (po) => {
+    const want = S.takeManifest('rail', 8, (po) => {
       if (!R.serves(po.to) || (Rm && Rm.siteFor && Rm.siteFor(po.mat))) return false;
-      const d = po.to.pod.depot, r = room.has(d) ? room.get(d) : d.roomFor();
+      const d = R.blockOf(po.to).depot, r = room.has(d) ? room.get(d) : d.roomFor();
       if (r < 2) return false;
       room.set(d, r - 1);
       return true;
     });
     const out = crates();
     if (!want.length && out < 3) return;
-    // a train needs a clear run in from the west edge
-    if (!R.mainClear(RZ, -XO - 50, -XO + 420)) { S.backlog.rail.unshift(...want); return; }
+    // in at whichever portal has a clear run in
+    const portal = PORTALS.slice().sort(() => Math.random() - 0.5).find(portalClear);
+    if (!portal) { S.backlog.rail.unshift(...want); return; }
     const tr = new NetTrain('freight', Math.min(8, Math.max(want.length, Math.min(4, out), 2)));
     want.forEach((po, i) => {
-      const d = po.to.pod.depot, c = S.newContainer(11, po.mat);
+      const d = R.blockOf(po.to).depot, c = S.newContainer(11, po.mat);
       S.fillPO(c, po);
       c.ringTo = d; d.incoming++;
       c.status = 'On industrial freight'; c.loc = tr.id;
@@ -1108,27 +1224,27 @@
       R.stats.imported++;
     });
     tr.route = null;
-    makeRoute(tr, { e: ENTRY, o: 0 }, [], undefined, { replan: true });
+    makeRoute(tr, { e: portal.edge, o: 0 }, [], undefined, { replan: true });
     tr.s = 0;
     tr.place();
     R.stats.freight++;
-    WT.log(`🚂 Industrial freight ${tr.id} inbound with ${want.length} box${want.length === 1 ? '' : 'es'} for the pods`, 'blue', true);
+    WT.log(`🚂 Freight ${tr.id} inbound from the ${portal.side === 'W' ? 'west' : 'east'} with ${want.length} box${want.length === 1 ? '' : 'es'} for the blocks`, 'blue', true);
     WT.spawn(runNet(tr));
   }
   // ore trains: in at the west end of the mine line, empties from the container works, loaded at the mine, then
   // across the main onto the trunk and down the spine to the pods that ordered it
   function dispatchOre() {
     const S = WT.SUP, Rm = WT.REMOTE;
-    if (!R.built || !W.railBuilt || !Rm || !Rm.branch || freights().length >= 3 || freights().some((t) => t.ore && t.ore.stage < 2)) return;
+    if (!R.built || !Rm || !Rm.branch || freights().length >= 5 || freights().some((t) => t.ore && t.ore.stage < 2)) return;
     const factory = Rm.containerFactory && Rm.containerFactory();
     if (!factory || factory.trainBusy) return;
-    const ours = (po, mat) => po.mat === mat && R.serves(po.to) && po.to.pod.depot.roomFor() > 1;
+    const ours = (po, mat) => po.mat === mat && R.serves(po.to) && R.blockOf(po.to).depot.roomFor() > 1;
     const site = WT.facilities.find((f) => f.remote && f.active && !f.trainBusy && factory.available(f.mat) > 0 && S.backlog.rail.some((po) => ours(po, f.mat)));
     if (!site || !R.mainClear(BR, -XB - 50, -XB + 420)) return;
     const room = new Map();
     const manifest = S.takeManifest('rail', Math.min(6, factory.available(site.mat)), (po) => {
       if (!ours(po, site.mat)) return false;
-      const d = po.to.pod.depot, r = room.has(d) ? room.get(d) : d.roomFor();
+      const d = R.blockOf(po.to).depot, r = room.has(d) ? room.get(d) : d.roomFor();
       if (r < 2) return false;
       room.set(d, r - 1);
       return true;
@@ -1138,13 +1254,13 @@
     factory.trainBusy = true; site.trainBusy = true;
     const tr = new NetTrain('freight', Math.max(2, manifest.length), true);
     tr.ore = { site, factory, manifest, boxes, stage: 0 };
-    for (const po of manifest) { po.to.pod.depot.incoming++; S.ev(po, `Ore train ${tr.id} sent for it · via ${site.id}`); }
+    for (const po of manifest) { R.blockOf(po.to).depot.incoming++; S.ev(po, `Ore train ${tr.id} sent for it · via ${site.id}`); }
     tr.route = null;
     makeRoute(tr, { e: MINE, o: 0 }, [], undefined, { replan: true });
     tr.s = 0;
     tr.place();
     R.stats.ore++;
-    WT.log(`⛏️ Ore train ${tr.id} up the mine line for ${manifest.length} box${manifest.length === 1 ? '' : 'es'} of ${S.MAT[site.mat].name.toLowerCase()} for the pods`, 'blue', true);
+    WT.log(`⛏️ Ore train ${tr.id} up the mine line for ${manifest.length} box${manifest.length === 1 ? '' : 'es'} of ${S.MAT[site.mat].name.toLowerCase()} for the blocks`, 'blue', true);
     WT.spawn(runNet(tr));
   }
   // the ore run's two calls on the mine line, each with the wagons centred under the loader
@@ -1164,18 +1280,18 @@
     yield* o.site.loadTrain(tr, o.manifest);
     o.site.trainBusy = false;
     const loaded = tr.manifest || [];
-    for (const po of o.manifest) if (!loaded.includes(po)) { const d = po.to.pod && po.to.pod.depot; if (d) d.incoming = Math.max(0, d.incoming - 1); }
+    for (const po of o.manifest) if (!loaded.includes(po)) { const d = R.blockOf(po.to) && R.blockOf(po.to).depot; if (d) d.incoming = Math.max(0, d.incoming - 1); }
     for (const car of tr.cars) {
       const c = car.cont;
-      if (c && c.full && c.po && loaded.includes(c.po)) { c.ringTo = c.po.to.pod.depot; c.status = 'On ore train · bound for ' + c.ringTo.id; }
+      if (c && c.full && c.po && loaded.includes(c.po)) { c.ringTo = R.blockOf(c.po.to).depot; c.status = 'On ore train · bound for ' + c.ringTo.id; }
     }
     R.stats.oreBoxes += loaded.length;
-    tr.status = 'Loaded · bound for the pods';
+    tr.status = 'Loaded · bound for the blocks';
   }
   WT.spawn((function* () {
     while (true) {
       yield* WT.sleep(4);
-      try { dispatchOre(); dispatchFreight(); } catch (e) { console.error('[Industrial rail] dispatch:', e); }
+      try { dispatchOre(); dispatchFreight(); } catch (e) { console.error('[Rail grid] dispatch:', e); }
     }
   })());
 })();

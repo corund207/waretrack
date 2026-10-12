@@ -1,7 +1,7 @@
 /* WareTrack – the growth director: economy, project planning and animated construction */
 (function () {
   const T = THREE, M = WT.M, W = WT.W, FX = WT.FX;
-  const G = (WT.G = { money: 1200000, earned: 0, done: 0, projects: [], history: [], built: [], milestones: [] });
+  const G = (WT.G = { money: 3600000, earned: 0, done: 0, projects: [], history: [], built: [], milestones: [] });
 
   G.INCOME_SCALE = 0.5;
   G.earn = (amt) => { amt *= G.INCOME_SCALE; G.money += amt; G.earned += amt; };
@@ -17,180 +17,143 @@
     'Steel Mill': 600e3, 'Copper Refinery': 520e3, 'Chemical Plant': 560e3, Sawmill: 340e3, 'Glass Works': 450e3, 'Aluminium Smelter': 580e3,
     'Wire Mill': 380e3, 'Motor Works': 470e3, 'Circuit Fab': 520e3, 'Panel Press': 440e3, 'Moulding Shop': 360e3, 'Frame Shop': 320e3,
     'Iron mine': 380e3, 'Coal mine': 360e3, 'Bauxite mine': 380e3, 'Sand quarry': 300e3, 'Grain farm': 280e3,
-    'Container factory': 460e3, 'Gas field': 550e3, 'Off-site empty yard': 420e3, 'Mover depot': 520e3, 'Production ring': 700e3, 'Ring depot': 340e3 };
+    'Container factory': 460e3, 'Gas field': 550e3, 'Off-site empty yard': 420e3, 'Mover depot': 520e3, 'Rail trunk': 900e3, Spine: 420e3, 'Block station': 340e3 };
   const DUR = { Warehouse: 26, Factory: 32, 'Rail line': 30, 'Rail terminal': 28, 'Power plant': 34, 'Port terminal': 34, Airfield: 26,
     'Air terminal': 30, Stand: 14, Tower: 18, Headquarters: 40, 'Solar farm': 16, 'Tank farm': 22, Parking: 12,
     'Container depot': 24, 'Truck stop': 18, Substation: 16, 'Water tower': 20,
     'Steel Mill': 38, 'Copper Refinery': 32, 'Chemical Plant': 34, Sawmill: 24, 'Glass Works': 30, 'Aluminium Smelter': 40,
     'Wire Mill': 26, 'Motor Works': 30, 'Circuit Fab': 32, 'Panel Press': 28, 'Moulding Shop': 24, 'Frame Shop': 22,
     'Iron mine': 24, 'Coal mine': 24, 'Bauxite mine': 24, 'Sand quarry': 20, 'Grain farm': 20,
-    'Container factory': 26, 'Gas field': 28, 'Off-site empty yard': 24, 'Mover depot': 22, 'Production ring': 30, 'Ring depot': 22 };
+    'Container factory': 26, 'Gas field': 28, 'Off-site empty yard': 24, 'Mover depot': 22, 'Rail trunk': 70, Spine: 45, 'Block station': 22 };
   const ICON = { Warehouse: '🏬', Factory: '🏭', 'Rail line': '🛤️', 'Rail terminal': '🚉', 'Power plant': '⚡', 'Port terminal': '⚓', Airfield: '🛬',
     'Air terminal': '🛫', Stand: '🛩️', Tower: '📡', Headquarters: '🏢', 'Solar farm': '☀️', 'Tank farm': '🛢️', Parking: '🅿️',
     'Container depot': '🧱', 'Truck stop': '⛽', Substation: '🔌', 'Water tower': '💧',
     'Steel Mill': '🔩', 'Copper Refinery': '🟫', 'Chemical Plant': '⚗️', Sawmill: '🪵', 'Glass Works': '🫙', 'Aluminium Smelter': '🪨',
     'Wire Mill': '🧵', 'Motor Works': '⚙️', 'Circuit Fab': '💾', 'Panel Press': '🛠️', 'Moulding Shop': '🧴', 'Frame Shop': '🪚',
     'Iron mine': '⛏️', 'Coal mine': '⛏️', 'Bauxite mine': '⛏️', 'Sand quarry': '⛏️', 'Grain farm': '🌾',
-    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖', 'Production ring': '🛤️', 'Ring depot': '🚉' };
+    'Container factory': '🏭', 'Gas field': '🔥', 'Off-site empty yard': '📦', 'Mover depot': '🤖', 'Rail trunk': '🛤️', Spine: '🛤️', 'Block station': '🚉' };
   G.ICON = ICON;
   const costOf = (type) => Math.round((COST[type] * Math.pow(1.065, G.done)) / 1000) * 1000;
 
   /* ---------- planning ---------- */
-  const usedOn = (A) => W.plots.filter((p) => p.A === A && p.used).length;
+  // The map is built around the rail grid (js/ring.js): the trunks go down first, then a block only opens once its
+  // spine is laid, and every block gets its station and its mover depot before anything else is built in it.
   const has = (type, pred = () => true) => WT.facilities.some((f) => f.type === type && pred(f));
   const count = (type) => WT.facilities.filter((f) => f.type === type).length;
-  function freePlot(avenues = W.AVENUES) {
-    for (const A of avenues) for (let k = 0; k < W.PLOT_K; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
-      const p = W.plotAt(A, s, h, k);
-      if (p && !p.used) return p;
-    }
-    return null;
-  }
-  // No production in the park itself: every factory has its own plot in an industrial pod west of the park
-  // (js/ring.js), refining and components south of the highway, final assembly with its distribution centres north
-  // of it. One plant of each kind, sized to supply every line that uses its output.
   const ring = WT.RING;
   // how many plants (any tier) use material m, and how many plants make it
   const usersOf = (m) => WT.facilities.filter((f) => f.type === 'Factory' && f.recipe.in.includes(m)).length;
   const makersOf = (name) => WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === name).length;
-  // mover depots spread over the avenues (fewest depots first, nearest the park centre), so no one avenue carries the
-  // whole fleet home
-  function depotPlot() {
-    const n = (A) => WT.facilities.filter((f) => f.type === 'Mover depot' && f.plot && f.plot.A === A).length;
-    for (const A of [...W.AVENUES].sort((a, b) => n(a) - n(b) || Math.abs(a) - Math.abs(b))) for (let k = 0; k < W.PLOT_K; k++) for (const h of [-1, 1]) for (const s of [1, -1]) {
-      const p = W.plotAt(A, s, h, k);
-      if (p && !p.used) return p;
-    }
-    return null;
-  }
   function project(type, make, extra = {}) {
     if (!Number.isFinite(COST[type]) || !DUR[type] || !ICON[type]) throw new Error('Incomplete project catalogue: ' + type);
     return Object.assign({ type, make, cost: costOf(type), label: type, icon: ICON[type] }, extra);
   }
   const queue = [];
-  function plan() {
-    if (queue.length) return queue[0];
-    const A0 = -120, plots = (A, s, h, k) => W.plotAt(A, s, h, k);
-    const script = [
-      () => project('Warehouse', () => new WT.Warehouse(ring.dcSlot('Appliances'), 'dc')),
-      () => project('Factory', () => new WT.Factory(ring.slotFor('Appliances'), ring.dcOf('Appliances'), 'Appliances')),
-      () => project('Warehouse', () => new WT.Warehouse(ring.dcSlot('Auto Parts'), 'bulk')),
-      () => project('Factory', () => new WT.Factory(ring.slotFor('Auto Parts'), ring.dcOf('Auto Parts'), 'Auto Parts')),
-      () => project('Rail line', null),
-      // the mover fleet must be in place before the first terminal: every container leaves it on a mover
-      () => project('Mover depot', () => new WT.MoverDepot(plots(A0, 1, 1, 1))),
-      () => project('Rail terminal', () => new WT.RailTerminal(A0)),
-      () => project('Steel Mill', () => new WT.Factory(ring.slotFor('Steel Mill'), null, 'Steel Mill')),
-      () => project('Container depot', () => new WT.Depot(plots(A0, -1, 1, 0))),
-      () => project('Power plant', () => new WT.PowerPlant(plots(A0, 1, 1, 0))),
-      () => project('Warehouse', () => new WT.Warehouse(ring.dcSlot('Electronics'), 'fulfil')),
-      () => project('Factory', () => new WT.Factory(ring.slotFor('Electronics'), ring.dcOf('Electronics'), 'Electronics')),
-      () => project('Truck stop', () => new WT.TruckStop(plots(120, -1, 1, 0))),
-      () => project('Port terminal', () => new WT.Port(A0)),
-      () => project('Chemical Plant', () => new WT.Factory(ring.slotFor('Chemical Plant'), null, 'Chemical Plant')),
-      () => project('Copper Refinery', () => new WT.Factory(ring.slotFor('Copper Refinery'), null, 'Copper Refinery')),
-      () => project('Motor Works', () => new WT.Factory(ring.slotFor('Motor Works'), null, 'Motor Works')),
-      // the rail hub and its branch lines, then a rail depot for each pod that has a plant
-      () => project('Production ring', null, { label: 'Industrial rail · trunk + station loops' }),
-      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[4]), { label: 'Pod E rail depot' }),
-      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[0]), { label: 'Pod A rail depot' }),
-      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[2]), { label: 'Pod C rail depot' }),
-      () => project('Ring depot', () => new WT.RingDepot(ring.PODS[1]), { label: 'Pod B rail depot' }),
-      () => project('Airfield', () => new WT.Airfield()),
-      () => project('Air terminal', () => new WT.AirTerminal()),
-      () => project('Stand', () => new WT.Stand(1)),
-      () => project('Headquarters', () => new WT.HQ(plots(120, -1, -1, 0))),
-      () => project('Tower', () => new WT.Tower()),
-    ];
-    if (G.scriptIdx === undefined) G.scriptIdx = 0;
-    if (G.scriptIdx < script.length) { queue.push(script[G.scriptIdx++]()); return queue[0]; }
-    // Hinterland construction must precede procedural expansion: the rail scheduler serves sites,
-    // but does not construct them. Each is queued once, including while it is under construction.
-    if (W.railBuilt && has('Rail terminal', (f) => f.active)) {
-      if (!has('Container factory')) { queue.push(project('Container factory', () => new WT.ContainerFactory())); return queue[0]; }
-      for (const kind of Object.keys(WT.REMOTE.KINDS)) {
-        if (!has(kind)) { queue.push(project(kind, () => new WT.RemoteSite(kind))); return queue[0]; }
-      }
-      if (!has('Gas field')) { queue.push(project('Gas field', () => new WT.GasField())); return queue[0]; }
-      if (!has('Off-site empty yard')) { queue.push(project('Off-site empty yard', () => new WT.OffsiteYard())); return queue[0]; }
+  const spineQueued = new Set();
+  const WAIT = 'wait';
+  // what a block still needs before anything can be built in it: its spine, its station, its mover depot
+  function infra(b) {
+    if (!ring.spineBuilt(b.spine)) {
+      if (spineQueued.has(b.spine)) return WAIT;
+      spineQueued.add(b.spine);
+      return project('Spine', null, { spine: b.spine, label: `Spine ${b.spine + 1} · x ${W.SPINES[b.spine]}` });
     }
-    // procedural growth
-    if (ring.built) {
-      const pod = ring.needsDepot();
-      if (pod && !queue.length) { pod.depot = 'planned'; queue.push(project('Ring depot', () => new WT.RingDepot(pod), { label: 'Pod ' + pod.key + ' rail depot' })); return queue[0]; }
-    }
-    const stands = count('Stand'), plotFacs = WT.facilities.filter((f) => f.plot).length;
-    if (stands < WT.AIR.standXs.length && plotFacs >= 6 + stands * 4) { queue.push(project('Stand', () => new WT.Stand(stands + 1))); return queue[0]; }
-    if (W.railBuilt) for (const A of W.AVENUES) {
-      if (usedOn(A) >= 2 && !has('Rail terminal', (f) => f.A === A) && !(A === 600)) { queue.push(project('Rail terminal', () => new WT.RailTerminal(A))); return queue[0]; }
-    }
-    for (const A of W.AVENUES) {
-      if (usedOn(A) >= 4 && !has('Port terminal', (f) => f.A === A)) { queue.push(project('Port terminal', () => new WT.Port(A))); return queue[0]; }
-    }
-    // once the park's own yards are all at work, more yards out along the mainline for rail capacity
-    const yards = WT.facilities.filter((f) => f.type === 'Rail terminal');
-    if (yards.length >= 2 && yards.every((f) => f.active)) {
-      const A = W.YARD_SITES.find((x) => !yards.some((f) => f.A === x));
-      if (A !== undefined) { queue.push(project('Rail terminal', () => new WT.RailTerminal(A))); return queue[0]; }
-    }
-    // every mover bay is taken and jobs still wait for a mover: another depot for the growing fleet
-    if (WT.SUP.needMoverDepot && !has('Mover depot', (f) => !f.active)) {
-      const p = depotPlot();
-      if (p) { p.used = 'planned'; WT.SUP.needMoverDepot = false; queue.push(project('Mover depot', () => new WT.MoverDepot(p), { plot: p })); return queue[0]; }
-    }
-    // upstream industry, tier by tier: a component plant once a line uses its part, a refinery once a plant uses its
-    // stock, each on its own plot in its pod
-    for (const name of WT.SUP.INTERMEDIATE) {
-      const r = WT.SUP.PLANTS[name], users = usersOf(r.out), makers = makersOf(name);
-      if (users && !makers) {
-        const p = ring.slotFor(name);
-        if (p) { p.used = 'planned'; queue.push(project(name, () => new WT.Factory(p, null, name), { plot: p, label: name })); return queue[0]; }
-      }
-    }
-    G.fillTick = (G.fillTick || 0) + 1;
-    if (G.fillTick % 6 === 0) {
-      const p = freePlot();
-      if (p) {
-        const pw = count('Power plant'), fac = count('Factory');
-        const deps = count('Container depot'), stops = count('Truck stop');
-        const pick = pw < Math.ceil(fac / 4) ? 'Power plant' : deps < Math.ceil(fac / 8) ? 'Container depot' : stops < Math.ceil(fac / 10) ? 'Truck stop'
-          : WT.pick(['Solar farm', 'Tank farm', 'Parking', 'Substation', 'Water tower', 'Solar farm']);
-        const cls = { 'Power plant': WT.PowerPlant, 'Solar farm': WT.SolarFarm, 'Tank farm': WT.TankFarm, Parking: WT.Parking, 'Container depot': WT.Depot,
-          'Truck stop': WT.TruckStop, Substation: WT.Substation, 'Water tower': WT.WaterTower }[pick];
-        queue.push(project(pick, () => new cls(p), { plot: p }));
-        p.used = 'planned';
-        return queue[0];
-      }
-    }
-    // the next assembly line its pod has room for, with its distribution centre if that is not there yet
-    const line = WT.SUP.ASSEMBLY.find((n) => !count2(n) && ring.slotFor(n));
-    if (line) {
-      const lp = ring.slotFor(line), dp = ring.dcSlot(line);
-      if (!dp.used) {
-        dp.used = 'planned';
-        queue.push(project('Warehouse', () => new WT.Warehouse(dp, WT.pick(['dc', 'cold', 'fulfil', 'bulk', 'dc'])), { plot: dp }));
-      }
-      lp.used = 'planned';
-      queue.push(project('Factory', () => new WT.Factory(lp, ring.dcOf(line), line), { plot: lp, label: line + ' Plant' }));
-      return queue[0];
-    }
-    const p = freePlot();
-    if (p) {
-      p.used = 'planned';
-      queue.push(project('Warehouse', () => new WT.Warehouse(p)));
-      return queue[0];
+    if (b.utility) return null;
+    if (!b.depot) { b.depot = 'planned'; ring.precinct(b); return project('Block station', () => new WT.BlockStation(b), { label: `Block ${b.key} station` }); }
+    if (!b.movers) { b.movers = 'planned'; b.moverPlot.used = 'planned'; return project('Mover depot', () => (b.movers = new WT.MoverDepot(b.moverPlot)), { label: `Block ${b.key} mover depot` }); }
+    return null;
+  }
+  const push = (p) => { queue.push(p); return queue[0]; };
+  // queue what the block needs first, then the project itself; null (try something else) while its spine is laid
+  function inBlock(b, make) {
+    const need = infra(b);
+    if (need === WAIT) return null;
+    if (need) return push(need);
+    return make();
+  }
+  const count2 = (line) => WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === line).length;
+  // utility plots: the free ones in blocks that are already open first, nearest the middle of the map
+  function fillerPlot() {
+    const open = (b) => !!b.depot || b.fenced;
+    const blocks = ring.BLOCKS.filter((b) => ring.spineBuilt(b.spine)).sort((a, b) => (open(b) - open(a)) || Math.abs(a.A) - Math.abs(b.A) || a.h - b.h);
+    for (const b of blocks) {
+      const p = b.fillers.find((q) => !q.used);
+      if (p) return { b, p };
     }
     return null;
   }
-  const count2 = (line) => WT.facilities.filter((f) => f.type === 'Factory' && f.lineName === line).length;
+  function plan() {
+    if (queue.length) return queue[0];
+    // round one: the trunks
+    if (!ring.built) { if (G.trunkQueued) return null; G.trunkQueued = true; return push(project('Rail trunk', null, { label: 'Rail grid · north and middle trunks' })); }
+    const plants = count('Factory');
+    // the hinterland once the first plants are running: container works, mines and quarry, the gas field
+    if (plants >= 3) {
+      if (!has('Container factory')) return push(project('Container factory', () => new WT.ContainerFactory()));
+      for (const kind of Object.keys(WT.REMOTE.KINDS)) if (!has(kind)) return push(project(kind, () => new WT.RemoteSite(kind)));
+      if (!has('Gas field')) return push(project('Gas field', () => new WT.GasField()));
+    }
+    // the port's block on the coast once there is enough industry to feed
+    if (plants >= 5 && !has('Port terminal')) {
+      const pb = ring.BLOCKS.find((b) => b.port);
+      const r = inBlock(pb, () => push(project('Port terminal', () => { const f = new WT.Port(pb.A); f.pod = pb; return f; })));
+      if (r) return r;
+    }
+    // upstream industry, tier by tier: a component plant once a line uses its part, a refinery once a plant uses its
+    // stock, each on its own plot in its block
+    for (const name of WT.SUP.INTERMEDIATE) {
+      const r = WT.SUP.PLANTS[name], b = ring.podFor(name);
+      if (!usersOf(r.out) || makersOf(name) || !b) continue;
+      const p = ring.slotFor(name);
+      if (!p) continue;
+      const q = inBlock(b, () => { p.used = 'planned'; return push(project(name, () => new WT.Factory(p, null, name), { plot: p, label: name })); });
+      if (q) return q;
+    }
+    // a utility now and then
+    G.fillTick = (G.fillTick || 0) + 1;
+    if (G.fillTick % 5 === 0) {
+      const fp = fillerPlot();
+      if (fp) {
+        const q = inBlock(fp.b, () => {
+          const pw = count('Power plant'), fac = count('Factory');
+          const pick = pw < Math.ceil(fac / 4) ? 'Power plant' : !has('Headquarters') ? 'Headquarters' : WT.pick(['Solar farm', 'Tank farm', 'Substation', 'Water tower', 'Solar farm', 'Parking']);
+          const cls = { 'Power plant': WT.PowerPlant, 'Solar farm': WT.SolarFarm, 'Tank farm': WT.TankFarm, Parking: WT.Parking, Headquarters: WT.HQ, Substation: WT.Substation, 'Water tower': WT.WaterTower }[pick];
+          fp.p.used = 'planned';
+          ring.precinct(fp.b);
+          return push(project(pick, () => new cls(fp.p), { plot: fp.p }));
+        });
+        if (q) return q;
+      }
+    }
+    // the next assembly line its block has room for, with its distribution centre if that is not there yet
+    for (const line of WT.SUP.ASSEMBLY) {
+      if (count2(line) || !ring.slotFor(line)) continue;
+      const b = ring.podFor(line);
+      const q = inBlock(b, () => {
+        const lp = ring.slotFor(line), dp = ring.dcSlot(line);
+        if (!dp.used) { dp.used = 'planned'; queue.push(project('Warehouse', () => new WT.Warehouse(dp, WT.pick(['dc', 'cold', 'fulfil', 'bulk', 'dc'])), { plot: dp })); }
+        lp.used = 'planned';
+        return push(project('Factory', () => new WT.Factory(lp, ring.dcOf(line), line), { plot: lp, label: line + ' Plant' }));
+      });
+      if (q) return q;
+      break; // (one line at a time, in order)
+    }
+    // the rest of the grid: the spines no block has needed yet
+    for (let i = 0; i < W.SPINES.length; i++) if (!ring.spineBuilt(i) && !spineQueued.has(i) && plants >= 12) { spineQueued.add(i); return push(project('Spine', null, { spine: i, label: `Spine ${i + 1} · x ${W.SPINES[i]}` })); }
+    // then utilities on every free plot
+    const fp = fillerPlot();
+    if (fp) {
+      const q = inBlock(fp.b, () => { fp.p.used = 'planned'; ring.precinct(fp.b); return push(project('Solar farm', () => new WT.SolarFarm(fp.p), { plot: fp.p })); });
+      if (q) return q;
+    }
+    return null;
+  }
   G.next = () => plan();
 
   /* ---------- construction ---------- */
   function reachOf(f) {
     if (f.plot) return [f.plot.A, f.plot.h, Math.abs(f.plot.zc) + 56];
-    if (f.type === 'Rail terminal') return [f.A, -1, 592];
     if (f.type === 'Port terminal') return [f.A, 1, 574];
-    if (f.type === 'Airfield') return [900, -1, 352];
     return null;
   }
   function scaffold(site) {
@@ -258,7 +221,7 @@
       spot.busy = true;
       const dump = i === 0 || i === 3;
       const t = new WT.Truck({ variant: dump ? 'dump' : 'mixer', legs: [{ fac: siteStop(f, spot), op: 'build', dock: {} }], mission: (dump ? 'Spoil haul · ' : 'Concrete pour · ') + f.id,
-        spawnX: f.plot.A + (Math.random() < 0.5 ? -1 : 1) * WT.rnd(160, 240),
+        local: { A: f.plot.A, z: f.plot.h * (f.plot.h < 0 ? W.ROAD_START.north : W.ROAD_START.south) },
         carrier: dump ? { name: 'Riverside Earthworks', cab: 0xf0b429, stripe: 0xf0b429 } : { name: 'Riverside Ready-Mix', cab: 0xf08c2a, stripe: 0xf08c2a } });
       t.busy = true;
       WT.spawn(WT.runTruck(t));
@@ -306,43 +269,29 @@
     WT.emit('event', { kind: 'built', ent: f, weight: 4 });
     milestone(f);
   }
-  function* buildRailLine(p) {
+  // track works: the trunks first of all, then a spine whenever a block on it is about to open
+  function* trackWorks(p, works, secs, msgStart, msgDone) {
     p.stage = 'Laying track';
-    WT.log('🛤️ Construction started: Northern rail line', 'amber', true);
+    WT.log(msgStart, 'amber', true);
     WT.emit('event', { kind: 'rail-build', weight: 3, project: p });
     const t0 = WT.sim.minutes;
-    WT.spawn((function* () { while (p.stage !== 'Online') { p.progress = Math.min(0.99, (WT.sim.minutes - t0) / (30 * WT.sim.MIN_PER_SEC)); yield; } })());
-    yield* W.buildRail();
+    WT.spawn((function* () { while (p.stage !== 'Online') { p.progress = Math.min(0.99, (WT.sim.minutes - t0) / (secs * WT.sim.MIN_PER_SEC)); yield; } })());
+    yield* works;
     p.stage = 'Online';
     p.progress = 1;
     G.done++;
-    G.built.push({ id: 'RAIL-LINE', type: 'Rail line', t: WT.sim.minutes });
-    WT.log('🛤️ Northern rail line open to freight', 'green', true);
-    WT.startRail();
-  }
-
-  function* buildRing(p) {
-    p.stage = 'Laying track';
-    WT.log('🛤️ Construction started: industrial rail — trunk, spine and station loops', 'amber', true);
-    WT.emit('event', { kind: 'rail-build', weight: 3, project: p });
-    const t0 = WT.sim.minutes;
-    WT.spawn((function* () { while (p.stage !== 'Online') { p.progress = Math.min(0.99, (WT.sim.minutes - t0) / (40 * WT.sim.MIN_PER_SEC)); yield; } })());
-    yield* ring.build();
-    p.stage = 'Online';
-    p.progress = 1;
-    G.done++;
-    G.built.push({ id: 'RING', type: 'Production ring', t: WT.sim.minutes });
-    WT.log('🛤️ Industrial rail open: each pod depot gets its station loop as it is built', 'green', true);
-    WT.RING.startShuttles();
+    G.built.push({ id: p.type === 'Spine' ? 'SPINE-' + (p.spine + 1) : 'TRUNK', type: p.type, t: WT.sim.minutes });
+    WT.log(msgDone, 'green', true);
+    milestone();
   }
 
   /* ---------- milestones (the 5-step timeline in the UI) ---------- */
   G.PHASES = [
-    { key: 'found', name: 'Founded', test: () => has('Warehouse', (f) => f.active) },
+    { key: 'found', name: 'Rail grid', test: () => WT.RING.built },
     { key: 'make', name: 'Manufacturing', test: () => has('Factory', (f) => f.active) },
-    { key: 'rail', name: 'Rail freight', test: () => has('Rail terminal', (f) => f.active) },
+    { key: 'rail', name: 'Rail freight', test: () => WT.RING.stats.freight > 0 },
     { key: 'sea', name: 'Seaport', test: () => has('Port terminal', (f) => f.active) },
-    { key: 'air', name: 'Air cargo', test: () => has('Stand', (f) => f.active) },
+    { key: 'air', name: 'Mining', test: () => WT.RING.stats.ore > 0 },
     { key: 'metro', name: 'Mega hub', test: () => WT.facilities.filter((f) => f.active).length >= 40 },
   ];
   function milestone() {
@@ -386,8 +335,8 @@
             next.started = WT.sim.minutes;
             G.projects.unshift(next);
             if (G.projects.length > 30) G.projects.pop();
-            if (next.type === 'Rail line') WT.spawn(buildRailLine(next));
-            else if (next.type === 'Production ring') WT.spawn(buildRing(next));
+            if (next.type === 'Rail trunk') WT.spawn(trackWorks(next, ring.buildTrunk(), 70, '🛤️ Construction started: the rail grid — north and middle trunks, portals at both map edges', '🛤️ Rail grid open: freight runs in from both map edges'));
+            else if (next.type === 'Spine') WT.spawn(trackWorks(next, ring.buildSpine(next.spine), 45, `🛤️ Construction started: spine ${next.spine + 1}, with its junctions, viaduct and stabling yard`, `🛤️ Spine ${next.spine + 1} open`));
             else {
               next.fac = next.make();
               next.label = next.fac.name;

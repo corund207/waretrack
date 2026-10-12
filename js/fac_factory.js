@@ -372,7 +372,7 @@
         status, statusTone: status === 'Running' ? 'green' : 'amber',
         where: this.starved ? 'Waiting on ' + S.MAT[this.starved].name : this.intermediate ? (consumers.length ? 'Supplies ' + consumers.slice(0, 3).join(', ') : 'No customers yet') : this.partner ? 'Feeds ' + this.partner.id : 'Standalone',
         bars,
-        rows: [...(this.pod ? [['Pod', `Pod ${this.pod.key} · ${this.pod.name} · rail depot ${(this.pod.depot && this.pod.depot.id) || 'planned'}`]] : []), ['Process', PROC_NAME[this.recipe.proc]], ['Produced', WT.fmtNum(this.produced) + (this.intermediate ? ' t' : ' units')],
+        rows: [...(this.pod ? [['Block', `${this.pod.key} · ${this.pod.name} · station ${(this.pod.depot && this.pod.depot.id) || 'planned'}`]] : []), ['Process', PROC_NAME[this.recipe.proc]], ['Produced', WT.fmtNum(this.produced) + (this.intermediate ? ' t' : ' units')],
           ['Open orders', String(S.orders.filter((o) => o.to === this && o.status !== 'Delivered' && o.status !== 'Cancelled').length)],
           ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
       });

@@ -27,9 +27,9 @@ const calm = () => { WT.Cinema.toggle(false); WT.select(null); };
 const at = (type, size, dx = 0, dz = 0) => `(() => { (${calm})(); const f = WT.facilities.find((f) => f.active && f.type === '${type}'); const [x, z] = f.center(); WT.flyTo(x + ${dx}, z + ${dz}, ${size}); return f.id; })()`;
 
 try {
-  // day one: bare land, the first plot being paved and built
+  // day one: the trunks going down before anything else
   await advance(page, 1);
-  await shot('01-founding', `(() => { (${calm})(); const f = WT.facilities[0]; const [x, z] = f.center(); WT.flyTo(x, z, 150); })()`);
+  await shot('01-founding', `(() => { (${calm})(); const L = WT.RING.layer; if (L) WT.flyTo(L.position.x - 30, L.position.z, 150); else WT.flyTo(-420, WT.RING.MT, 420); })()`);
 
   await advance(page, 22);
   // an open load (bed or open-frame box) being lifted off at a factory dock
@@ -40,22 +40,23 @@ try {
   await until(() => WT.ships.some((s) => s.port && /Berthed|Discharg|Loading|Unload/i.test(s.status)), 180);
   await shot('04-seaport', at('Port terminal', 130, 10, 6));
 
-  await until(() => WT.trains.some((t) => /Unload|Load|Work|Stopped|Berthed|crane/i.test(t.status)), 120);
-  await shot('05-rail-terminal', at('Rail terminal', 140));
+  // a junction on the middle trunk, with the spine running through it
+  await shot('05-rail-grid', `(() => { (${calm})(); WT.flyTo(WT.W.SPINES[2], WT.RING.MT, 260); })()`);
 
-  await until(() => WT.AIR.planes.some((p) => /Unloading|Loading/.test(p.status)), 180);
-  await shot('06-air-cargo', `(() => { (${calm})(); const p = WT.AIR.planes.find((p) => /Unloading|Loading/.test(p.status)) || WT.AIR.planes[0]; const at = WT.facilities.find((f) => f.type === 'Air terminal').center(); WT.flyTo(p.mesh.position.x * 0.85 + at[0] * 0.15, p.mesh.position.z * 0.85 + at[1] * 0.15, 105); return p.flight + ' ' + p.status; })()`);
+  // a block station with a train at the platform under the gantry
+  await until(() => WT.RING.trains.some((t) => /^Working at/.test(t.status)), 180);
+  await shot('06-block-station', `(() => { (${calm})(); const t = WT.RING.trains.find((t) => /^Working at/.test(t.status)); const [x, z] = t.at.toWorld(80, 0); WT.flyTo(x, z, 130); return t.id + ' ' + t.status; })()`);
 
   await advance(page, 14);
-  await shot('02-overview', `(() => { (${calm})(); WT.flyTo(60, -40, 760); })()`, { settleMs: 3200 });
-  await shot('07-supply-chain', `(() => { (${calm})(); WT.flyTo(-120, 0, 190); document.querySelector('#docks [data-tab=supply]').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); })()`);
+  await shot('02-overview', `(() => { (${calm})(); WT.flyTo(0, -60, 1500); })()`, { settleMs: 3200 });
+  await shot('07-supply-chain', `(() => { (${calm})(); WT.flyTo(0, -330, 260); document.querySelector('#docks [data-tab=supply]').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); })()`);
   await shot('08-truck-card', `(() => { (${calm})(); const t = WT.trucks.find((t) => t.po && t.container && t.driving) || WT.trucks.find((t) => t.po); WT.select(t, true); return t.id; })()`);
   await shot('09-cinema', `(() => { WT.Cinema.toggle(true); })()`, { settleMs: 4000 });
 
   // social card: the park itself, with just the top bar and KPIs for branding
   await page.setViewport({ width: 1280, height: 640 });
   await page.addStyleTag({ content: '#tracking, #docks, #modeChips, .right-stack, .toasts, .hint, #labels { display: none !important; }' });
-  await shot('social-preview', `(() => { (${calm})(); WT.flyTo(80, -30, 640); })()`, { settleMs: 3200, path: join(root, 'docs/social-preview.png') });
+  await shot('social-preview', `(() => { (${calm})(); WT.flyTo(0, -60, 1100); })()`, { settleMs: 3200, path: join(root, 'docs/social-preview.png') });
 } finally {
   if (errors.length) console.error(errors.join('\n'));
   await browser.close();

@@ -80,7 +80,12 @@ try {
         const p = rc[a].p, q = rc[b].p;
         if (rc[a].t !== rc[b].t && (WT.RING.trains.includes(rc[a].t) || WT.RING.trains.includes(rc[b].t)) && Math.hypot(p.x - q.x, p.z - q.z) < 4.5 && Math.abs(p.y - q.y) < 3) WT.__ringClash = (WT.__ringClash || 0) + 1;
       }
-      // container handling at the rail and port terminals is for autonomous movers only
+      // movers never leave their block: every stop of every mover job is in the block its depot serves
+      for (const t of WT.trucks) if (t.variant === 'mover' && t.bay) {
+        const home = WT.RING.blockOf(t.bay.depot);
+        for (const l of [t.curLeg, ...t.legs]) if (l && WT.RING.blockOf(l.fac) !== home) (WT.__crossBlock = WT.__crossBlock || []).push(t.id + ': ' + t.mission);
+      }
+      // container handling at the port is for autonomous movers only
       for (const t of WT.trucks) if (t.variant !== 'mover' && [t.curLeg, ...t.legs].some((l) => l && /Rail terminal|Port terminal/.test(l.fac.type))) (WT.__semiAtTerminal = WT.__semiAtTerminal || []).push(t.mission);
       const works = WT.REMOTE.containerFactory();
       if (works && works.slots.some((s) => s.items.length > 3 || s.items.some((c) => c.full || c.contents || c.open !== s.mat || c.manufacturer !== works.id))) throw new Error('Invalid manufactured empty inventory');
@@ -109,27 +114,26 @@ try {
       remote: facs.filter((f) => f.remote).length,
       mineLoads: facs.filter((f) => f.remote).reduce((n, f) => n + f.trainsLoaded, 0),
       pipeDelivered: facs.find((f) => f.type === 'Gas field')?.sent || 0,
-      emptyReceived: facs.find((f) => f.type === 'Off-site empty yard')?.received || 0,
       smelter: facs.some((f) => f.lineName === 'Aluminium Smelter'),
       manufactured: WT.REMOTE.containerFactory()?.made || 0,
       emptySent: WT.REMOTE.containerFactory()?.sent || 0,
       remoteDelivered: WT.SUP.deliveryStats.remote,
       siteEmptyReceived: facs.filter((f) => f.remote).reduce((n, f) => n + f.emptiesReceived, 0),
-      rail: WT.RAIL_STATS,
       // resource intake: never by road truck — every order rides a trunk carrier, the last leg is a container mover
       roadOrders: WT.SUP.orders.filter((o) => !['rail', 'sea', 'air', 'pipe', 'internal'].includes(o.mode)).length,
       truckIntake: WT.trucks.filter((t) => t.po && t.variant !== 'mover').length,
       movers: WT.trucks.filter((t) => t.variant === 'mover').length,
       semiAtTerminal: WT.__semiAtTerminal || [],
       fleet: WT.SUP.fleet(),
-      yards: facs.filter((f) => f.type === 'Rail terminal').map((f) => f.id + '@' + f.A),
+      crossBlock: WT.__crossBlock || [],
+      spines: WT.W.SPINES.filter((x, i) => WT.RING.spineBuilt(i)).length,
       moverWait: WT.SUP.moverWait,
       awaitingMover: WT.SUP.dispatchQ.length,
       starved: plants.filter((f) => f.starved).length,
       moverDepots: facs.filter((f) => f.type === 'Mover depot').length,
       cratesIssued: WT.SUP.cratesIssued, cratesRailed: WT.SUP.cratesRailed,
       moversDelivered: facs.filter((f) => f.type === 'Mover depot').reduce((n, f) => n + f.delivered, 0),
-      ring: { depots: facs.filter((f) => f.type === 'Ring depot').length, podPlants: plants.filter((f) => f.pod).length, parkPlants: plants.filter((f) => !f.pod).map((f) => f.id), shuttles: WT.RING.trains.filter((t) => t.role === 'shuttle').length, clash: WT.__ringClash || 0, locks: WT.RING.LOCKS.length, ...WT.RING.stats,
+      ring: { depots: facs.filter((f) => f.type === 'Block station').length, podPlants: plants.filter((f) => f.pod).length, parkPlants: plants.filter((f) => !f.pod).map((f) => f.id), shuttles: WT.RING.trains.filter((t) => t.role === 'shuttle').length, clash: WT.__ringClash || 0, locks: WT.RING.LOCKS.length, ...WT.RING.stats,
         delivered: WT.SUP.orders.filter((o) => o.ring && o.status === 'Delivered').length },
       moverDeliveries: WT.SUP.orders.filter((o) => o.status === 'Delivered' && o.events.some((e) => /^Mover assigned|^Collecting/.test(e.text))).length,
     };
@@ -144,22 +148,20 @@ try {
   check(st.remoteDelivered > 0, `${st.remoteDelivered} orders delivered using the same manufactured containers`);
   check(st.mineLoads > 0, `${st.mineLoads} trains loaded at remote production sites`);
   check(st.pipeDelivered > 0, `${st.pipeDelivered} tonnes delivered by pipeline`);
-  check(st.emptyReceived > 0, `${st.emptyReceived} empty containers received off-site by rail`);
-  check(st.rail.maxWagons <= 10 && st.rail.freightCalls > 10, `cargo-sized, frequent freight services (${st.rail.freightCalls} calls, up to ${st.rail.maxWagons} wagons)`);
   check(st.trucks > 10, `${st.trucks} vehicles on the network`);
   check(st.roadOrders === 0 && st.truckIntake === 0, 'no resources are trucked in by road (every order uses a trunk carrier)');
   check(st.moverDeliveries > 20, `${st.moverDeliveries} of the latest orders delivered to plants by autonomous container movers (${st.movers} active)`);
   check(st.semiAtTerminal.length === 0, 'only autonomous movers collect or drop containers at rail and port terminals' + (st.semiAtTerminal.length ? ': ' + [...new Set(st.semiAtTerminal)].slice(0, 3).join(' | ') : ''));
-  check(st.ring.parkPlants.length === 0 && st.ring.podPlants >= 10, `every factory sits in an industrial pod (${st.ring.podPlants} in pods${st.ring.parkPlants.length ? ', in the park: ' + st.ring.parkPlants.join(', ') : ''})`);
-  check(st.ring.depots >= 4 && st.ring.shuttles >= 2, `industrial rail: ${st.ring.depots} pod depots on station loops, ${st.ring.shuttles} pod shuttles, ${st.ring.locks} signalled conflicts, ${st.ring.stabled} stabling calls`);
+  check(st.ring.parkPlants.length === 0 && st.ring.podPlants >= 10, `every factory sits in a block on the rail grid (${st.ring.podPlants}${st.ring.parkPlants.length ? ', outside: ' + st.ring.parkPlants.join(', ') : ''})`);
+  check(st.ring.depots >= 6 && st.ring.shuttles >= 2 && st.spines >= 3, `rail grid: ${st.spines} spines, ${st.ring.depots} block stations on loops, ${st.ring.shuttles} block shuttles, ${st.ring.locks} signalled conflicts, ${st.ring.stabled} stabling calls`);
+  check(st.crossBlock.length === 0, 'movers never leave their block (between blocks everything goes by rail)' + (st.crossBlock.length ? ': ' + [...new Set(st.crossBlock)].slice(0, 3).join(' | ') : ''));
   check(st.ring.clash === 0, `no two trains ever meet at a junction or crossing (${st.ring.clash} clashes)`);
-  check(st.ring.ore > 0 && st.ring.oreBoxes > 0, `${st.ring.ore} ore trains loaded ${st.ring.oreBoxes} boxes at the mines straight for the pods`);
-  check(st.ring.delivered > 0 && st.ring.calls > 10, `${st.ring.delivered} transfers delivered between pods by rail (${st.ring.moved} boxes off trains, ${st.ring.empties} empties home, ${st.ring.calls} depot calls)`);
-  check(st.ring.freight > 0 && st.ring.imported > 0, `${st.ring.freight} industrial freight trains brought ${st.ring.imported} import boxes straight to the pods (${st.ring.exported} crates out)`);
+  check(st.ring.ore > 0 && st.ring.oreBoxes > 0, `${st.ring.ore} ore trains loaded ${st.ring.oreBoxes} boxes at the mines straight for the blocks`);
+  check(st.ring.delivered > 0 && st.ring.calls > 10, `${st.ring.delivered} transfers delivered between blocks by rail (${st.ring.moved} boxes off trains, ${st.ring.empties} empties home, ${st.ring.calls} station calls)`);
+  check(st.ring.freight > 0 && st.ring.imported > 0, `${st.ring.freight} freight trains brought ${st.ring.imported} import boxes in from the map edge straight to the blocks (${st.ring.exported} crates out)`);
   check(st.cratesRailed > 0, `${st.cratesRailed} product crates left by rail (${st.cratesIssued} issued to distribution centres)`);
-  check(st.moverDepots >= 1 && st.fleet.size > 20 && st.moversDelivered > 0, `mover fleet grew to ${st.fleet.size} (${st.moversDelivered} delivered by lowloader, ${st.moverDepots} depot${st.moverDepots > 1 ? 's' : ''}, ${st.fleet.out} on jobs)`);
+  check(st.moverDepots >= 4 && st.fleet.size > 30, `mover fleet of ${st.fleet.size} in ${st.moverDepots} block depots (${st.moversDelivered} commissioned as work grew, ${st.fleet.out} on jobs)`);
   console.log(`  plants starved (second half, sampled): ${Math.round((100 * starveS) / Math.max(1, plantS))}%`);
-  console.log('  rail yards: ' + st.yards.join(' '));
   const mw = st.moverWait;
   console.log(`  mover wait: ${mw.n} containers · avg ${(mw.sum / Math.max(1, mw.n)).toFixed(1)} min · max ${mw.max.toFixed(1)} min · ${st.awaitingMover} waiting now · ${st.starved}/${st.plants} plants starved`);
   check(maxOverlap <= 3, `vehicles never pile into each other (max ${maxOverlap} touching pairs)`);
@@ -167,7 +169,7 @@ try {
 
   const guards = await page.evaluate(() => {
     const site = WT.REMOTE.siteFor('iron'), factory = WT.REMOTE.containerFactory();
-    const term = WT.facilities.find((f) => f.type === 'Rail terminal' && f.active);
+    const term = null;
     const target = WT.facilities.find((f) => f.type === 'Factory' && f.active);
     const stock = site.stock, received = site.emptiesReceived, loads = site.trainsLoaded;
     const run = (g) => {
@@ -308,14 +310,12 @@ function auditPaths() {
   }
   for (const f of WT.facilities) {
     if (!f.active || !f.gateIn) continue;
-    for (const side of ['W', 'E']) {
-      const rin = WT.W.route({ edge: side }, f.gateIn), last = rin.slice(-2);
-      const dir = Math.sign(last[0][0] - rin[0][0]) || 1;
-      let v = check([[last[0][0] - dir * 40, last[0][1]], ...last, ...f.inPath(f.docks[0] || null).slice(0, 3)], 'road-in'); // through the first turn inside the gate, as a truck drives it
-      const rout = WT.W.route(f.gateOut, { edge: side });
-      v = v.concat(check([...f.outPath(f.docks[0] || null).slice(-2), ...rout.slice(0, 2), [rout[1][0] + (side === 'W' ? -40 : 40), rout[1][1]]], 'road-out'));
-      if (v.length) report.push({ fac: f.id, type: 'road → ' + f.type, n: v.length, sample: v.slice(0, 3), all: v });
-    }
+    const h = Math.sign(f.gateIn.z) || 1, end = { A: f.gateIn.A, z: h * (h < 0 ? WT.W.ROAD_START.north : WT.W.ROAD_START.south) };
+    const rin = WT.W.route(end, f.gateIn);
+    let v = check([...rin, ...f.inPath(f.docks[0] || null).slice(0, 3)], 'road-in'); // through the first turn inside the gate, as a truck drives it
+    const rout = WT.W.route(f.gateOut, end);
+    v = v.concat(check([...f.outPath(f.docks[0] || null).slice(-2), ...rout], 'road-out'));
+    if (v.length) report.push({ fac: f.id, type: 'road → ' + f.type, n: v.length, sample: v.slice(0, 3), all: v });
   }
   return { checked, report };
 }

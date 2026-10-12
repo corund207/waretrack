@@ -405,7 +405,7 @@
     }
     card() {
       return this.cardBase({
-        kicker: 'Facility · Port terminal', icon: '⚓', sub: '2 STS cranes · Avenue ' + this.A, where: this.busy ? this.busy.name + ' alongside' : 'Berth free',
+        kicker: 'Facility · Port terminal', icon: '⚓', sub: '2 STS cranes · ' + (this.pod ? 'Block ' + this.pod.key + ' · on to the blocks by rail' : 'Avenue ' + this.A), where: this.busy ? this.busy.name + ' alongside' : 'Berth free',
         rows: [['Imports waiting', String(this.importCount())], ['Exports staged', String(this.exportCount())], ['Empties', String(this.emptyCount()) + ' → depot'], ['Quay stack', this.stackCount() + ' / ' + this.slots.length * 2 + ' TEU'],
           ...this.craneRows(), ['Vessel', this.busy ? this.busy.name : '—'], ['Revenue', '$' + WT.fmtNum(this.income * 60 * WT.G.INCOME_SCALE) + '/min']],
       });

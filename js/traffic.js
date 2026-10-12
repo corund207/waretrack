@@ -459,6 +459,7 @@
       this.legs = o.legs || [];
       this.plan = o.plan || null;
       this.spawnX = o.spawnX;
+      this.local = o.local || null; // a block's own road: comes in at its end and leaves the same way (no highway)
       this.startAt = o.startAt;
       this.from = o.from || (Math.random() < 0.5 ? 'W' : 'E');
       this.to = o.to || (this.legs.length ? (Math.random() < 0.5 ? 'W' : 'E') : this.from === 'W' ? 'E' : 'W');
@@ -541,7 +542,13 @@
   WT.runTruck = function* (t) {
     const a = t.actor;
     let sp, pos;
-    if (t.spawnX !== undefined) {
+    if (t.local) {
+      // in at the end of the block's road, on the lane heading into the block
+      const h = Math.sign(t.local.z) || 1, lx = W.avLaneX(t.local.A, h, false);
+      sp = [lx, t.local.z];
+      pos = { A: t.local.A, z: t.local.z };
+      a.place(sp[0], sp[1], h > 0 ? Math.PI / 2 : -Math.PI / 2);
+    } else if (t.spawnX !== undefined) {
       const tx = t.legs.length ? t.legs[0].fac.gateIn.A : 0, dir = Math.sign(tx - t.spawnX) || 1;
       sp = [t.spawnX, W.hwLaneZ(dir, false)];
       pos = { hw: t.spawnX };
@@ -569,7 +576,7 @@
         if (clearAt(sp[0], sp[1], 17) && WT.sim.minutes - (TR.spawnT[sk] || -1) > 0.32) break;
         tries++;
         yield* WT.sleep(0.5);
-        if (tries % 4 === 0) {
+        if (tries % 4 === 0 && !t.local) {
           const dir = Math.sign(sp[1]);
           if (t.spawnX !== undefined) sp = [t.spawnX + WT.rnd(-260, 260), sp[1]];
           else sp = [sp[0] - dir * WT.rnd(0, 60), sp[1]];
@@ -661,6 +668,13 @@
       yield* despawn(t);
       return;
     }
+    if (t.local) {
+      // back out along the block's road the way it came
+      t.status = 'Leaving the block';
+      yield* TR.drive(t, [[a.x, a.z], ...W.route(pos, { A: t.local.A, z: t.local.z })], opts);
+      yield* despawn(t);
+      return;
+    }
     t.status = t.busy ? 'Leaving park' : 'Passing through';
     t.where = 'Highway';
     // finished work: head for the nearest way out rather than across the whole park
@@ -676,12 +690,9 @@
         const n = WT.trucks.filter((t) => !t.busy).length;
         if (n < 8 + Math.floor(WT.facilities.length / 9) && TR.jam < 0.35) {
           const r = Math.random();
-          const stops = WT.facilities.filter((f) => f.type === 'Truck stop' && f.active && f.freeDocks('rest'));
-          const hq = WT.facilities.filter((f) => (f.type === 'Headquarters' || f.type === 'Parking') && f.active && f.freeDocks('board'));
           let t;
-          if (r < 0.14 && stops.length) t = new Truck({ variant: 'box', trailer: WT.pick(['box', 'curtain', 'tanker', 'logs', 'coil', 'reefer']), mission: 'Rest + refuel', legs: [{ fac: WT.pick(stops), op: 'rest' }] });
-          else if (r < 0.22 && hq.length) t = new Truck({ variant: 'bus', mission: 'Staff shuttle', legs: [{ fac: WT.pick(hq), op: 'board' }] });
-          else if (r < 0.64) t = new Truck({ variant: 'car', mission: 'Commuter traffic' });
+          if (r < 0.08) t = new Truck({ variant: 'bus', mission: 'Intercity coach' });
+          else if (r < 0.6) t = new Truck({ variant: 'car', mission: 'Commuter traffic' });
           else t = new Truck({ variant: 'box', trailer: WT.pick(['box', 'curtain', 'tanker', 'reefer', 'logs', 'coil', 'flat']), mission: 'Through freight' });
           for (const l of t.legs) l.dock = l.fac.reserve(l.op);
           if (t.legs.some((l) => !l.dock)) { t.legs.forEach((l) => l.dock && l.fac.release(l.dock)); t.legs = []; }

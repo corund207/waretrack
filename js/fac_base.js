@@ -120,7 +120,7 @@
       const status = this.active ? 'Operational' : 'Under construction';
       return Object.assign({
         kicker: 'Facility · ' + this.type, title: this.id + ' ' + this.name, sub: 'Riverside Logistics Park',
-        icon: '🏭', iconBg: '#9fb4ff', status, statusTone: this.active ? 'green' : 'amber', where: this.plot ? `Avenue ${this.plot.A}` : '',
+        icon: '🏭', iconBg: '#9fb4ff', status, statusTone: this.active ? 'green' : 'amber', where: this.pod ? `Block ${this.pod.key} · ${this.pod.name}` : this.plot ? `Avenue ${this.plot.A}` : '',
         rows: [],
       }, extra);
     }

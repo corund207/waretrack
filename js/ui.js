@@ -189,16 +189,22 @@
       return;
     }
     if (a === 'ring') {
-      if (!WT.RING.built && !WT.facilities.some((x) => x.pod)) { showToast({ msg: 'Industrial rail not built yet — keep watching!', tone: 'amber' }); return; }
+      if (!WT.RING.built) { showToast({ msg: 'The rail grid is not laid yet — keep watching!', tone: 'amber' }); return; }
       WT.Cinema.userInput();
       WT.select(null);
-      WT.flyTo(WT.RING.center[0], WT.RING.center[1], 1250);
+      WT.flyTo(WT.RING.center[0], WT.RING.center[1], 1500);
+      return;
+    }
+    if (a === 'rail') {
+      // the busiest train on the grid
+      const tr = WT.RING.trains.slice().sort((p, q) => q.cars.filter((c) => c.cont).length - p.cars.filter((c) => c.cont).length || q.v - p.v)[0];
+      if (!tr) { showToast({ msg: 'No trains running yet — keep watching!', tone: 'amber' }); return; }
+      WT.Cinema.userInput();
+      WT.select(tr, true);
       return;
     }
     if (a === 'newest') f = WT.facilities[WT.facilities.length - 1];
-    if (a === 'rail') f = F.find((x) => x.type === 'Rail terminal');
     if (a === 'port') f = F.find((x) => x.type === 'Port terminal');
-    if (a === 'air') f = WT.facilities.find((x) => x.type === 'Air terminal') || WT.facilities.find((x) => x.type === 'Airfield');
     if (a === 'factory') { const fs = F.filter((x) => x.type === 'Factory'); f = fs.length ? WT.pick(fs) : null; }
     if (!f) { showToast({ msg: 'Not built yet — keep watching!', tone: 'amber' }); return; }
     WT.Cinema.userInput();
@@ -217,10 +223,9 @@
       <button data-go="overview">${ic('layers')}<span>Overview</span></button>
       <button data-go="newest">${ic('sparkle')}<span>Newest</span></button>
       <button data-go="factory">${ic('factory')}<span>Factories</span></button>
-      <button data-go="ring">${ic('layers')}<span>Industry</span></button>
-      <button data-go="rail">${ic('train')}<span>Rail</span></button>
-      <button data-go="port">${ic('ship')}<span>Port</span></button>
-      <button data-go="air">${ic('plane')}<span>Air</span></button>`);
+      <button data-go="ring">${ic('layers')}<span>Rail grid</span></button>
+      <button data-go="rail">${ic('train')}<span>Trains</span></button>
+      <button data-go="port">${ic('ship')}<span>Port</span></button>`);
   }
   UI.toggleCinemaMode = (v) => {
     const on = v === undefined ? !document.body.classList.contains('cinema') : v;
@@ -244,7 +249,7 @@
   function closeMenus() { document.querySelectorAll('.dropdown.open').forEach((d) => d.classList.remove('open')); }
 
   /* ---------- top bar + KPIs ---------- */
-  const fleet = () => WT.trucks.length + WT.trains.length + WT.RING.trains.length + WT.AIR.planes.length + WT.ships.length;
+  const fleet = () => WT.trucks.length + WT.trains.length + WT.RING.trains.length + WT.ships.length;
   function kpi(icon, label, value, sub, delta) {
     return `<div class="kpi card"><div class="kpi-ic">${ic(icon)}</div><div class="kpi-body"><div class="kpi-label">${label}</div>
       <div class="kpi-val">${value}${delta ? `<span class="delta up">↑ ${delta}</span>` : ''}</div><div class="kpi-sub">${esc(sub)}</div></div></div>`;
@@ -260,7 +265,7 @@
       kpi('cash', 'Capital', money(G.money), next ? 'next: ' + next.label + ' · ' + money(next.cost) : 'all plots planned', ''),
       kpi('warehouse', 'Facilities', act, building ? building + ' under construction' : 'none under construction', building ? '+' + building : ''),
       kpi('trend', 'Revenue', money(rate) + '/min', 'earned ' + money(G.earned), ''),
-      kpi('truck', 'Fleet active', fleet(), `${WT.trucks.length} road · ${WT.trains.length + WT.RING.trains.length} rail · ${WT.AIR.planes.length} air · ${WT.ships.length} sea`, ''),
+      kpi('truck', 'Fleet active', fleet(), `${WT.trucks.length} road · ${WT.trains.length + WT.RING.trains.length} rail · ${WT.ships.length} sea`, ''),
     ].join(''));
     setHTML('#cineBar', `<span class="cb-logo">${ic('video')}</span><b>Riverside Logistics Park</b><span class="ver dark">v${WT.VERSION}</span><span>${act} facilities</span><span>${money(G.money)}</span><span>${WT.fmtTime(WT.sim.minutes)}</span>${building ? `<span class="cb-build">${ic('crane')} ${building} building</span>` : ''}<button data-act="exit">Exit cinema (U)</button>`);
     renderChips();
@@ -302,7 +307,7 @@
     let card;
     if (p) {
       const pr = Math.round((p.progress || 0) * 100);
-      const id = p.fac ? p.fac.id : 'RAIL-LINE';
+      const id = p.fac ? p.fac.id : p.type === 'Spine' ? 'SPINE-' + (p.spine + 1) : 'TRUNK';
       card = `<div class="t-card" ${p.fac ? `data-uid="${p.fac.uid}"` : ''}>
         <div class="t-veh-ic emoji">${p.icon}</div>
         <div class="t-info"><b>${id} · ${esc(p.label)}</b><small>${p.stage === 'Online' ? 'Completed' : esc(p.stage)}${act.length > 1 ? ` · +${act.length - 1} more` : ''}</small>
@@ -334,7 +339,7 @@
       if (n) rows += row('', 'Next', 'Planned', `${n.icon} ${esc(n.label)}`, money(n.cost), G.money >= n.cost ? 'green' : 'grey', Math.round(Math.min(1, G.money / n.cost) * 100) + '%');
       for (const p of G.projects.slice(0, 14)) {
         const pr = Math.round((p.progress || 0) * 100), on = p.stage === 'Online';
-        rows += row(p.fac ? p.fac.uid : '', p.fac ? p.fac.id : 'RAIL', p.icon + ' ' + p.type, `<div class="mini"><i style="width:${pr}%"></i></div>`, on ? 'Online' : p.stage, on ? 'green' : 'amber', on ? '' : pr + '%');
+        rows += row(p.fac ? p.fac.uid : '', p.fac ? p.fac.id : p.type === 'Spine' ? 'SPINE-' + (p.spine + 1) : 'TRUNK', p.icon + ' ' + p.type, `<div class="mini"><i style="width:${pr}%"></i></div>`, on ? 'Online' : p.stage, on ? 'green' : 'amber', on ? '' : pr + '%');
       }
     } else if (tab === 'orders') {
       const S = WT.SUP;
@@ -352,9 +357,13 @@
         const bars = f.recipe.in.map((m) => { const p = Math.round(WT.clamp(f.stock[m] / f.cap, 0, 1) * 100); return `<span class="sb" title="${esc(S.MAT[m].name)}"><i class="${p < 15 ? 'low' : p < 40 ? 'mid' : ''}" style="height:${p}%"></i></span>`; }).join('');
         const inb = f.recipe.in.reduce((n, m) => n + S.openCount(f, m), 0);
         const outBar = f.intermediate ? `<span class="sb out"><i style="height:${Math.round((f.outStock / f.outCap) * 100)}%"></i></span>` : '';
-        rows += row(f.uid, f.id, `${f.pod ? 'Pod ' + f.pod.key + ' · ' : ''}T${f.tier} · ${f.lineName}`, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
+        rows += row(f.uid, f.id, `${f.pod ? 'Block ' + f.pod.key + ' · ' : ''}T${f.tier} · ${f.lineName}`, `<span class="sbars">${bars}${outBar}</span><small class="muted">${f.recipe.in.map((m) => S.MAT[m].name.split(' ')[0]).join(' · ')}${f.intermediate ? ' → ' + S.MAT[f.recipe.out].name.split(' ')[0] : ''}</small>`, f.starved ? 'Starved' : f.blocked ? 'Output full' : 'Running', f.starved || f.blocked ? 'amber' : 'green', inb ? inb + ' on order' : '');
       }
-      for (const t of act.filter((x) => x.type === 'Rail terminal' || x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, (t.trainsIn ? t.trainsIn().length : t.busy && t.busy !== 'incoming') ? 'Vessel/train in' : 'Open', 'blue', '');
+      for (const t of act.filter((x) => x.type === 'Port terminal')) rows += row(t.uid, t.id, t.type, `${t.importCount()} imports · ${t.exportCount()} exports`, t.busy && t.busy !== 'incoming' ? 'Vessel in' : 'Open', 'blue', '');
+      for (const d of act.filter((x) => x.type === 'Block station')) {
+        const boxes = d.slots.reduce((n, q) => n + q.items.length, 0);
+        rows += row(d.uid, d.id, 'Block ' + d.pod.key + ' station', `${boxes} boxes in the yard · ${d.incoming} inbound by rail`, d.train ? d.train.id + ' at the platform' : 'Platform clear', d.train ? 'blue' : 'green', '');
+      }
       for (const d of act.filter((x) => x.type === 'Container depot')) rows += row(d.uid, d.id, 'Depot', `${d.count()} empties stored`, 'Open', 'green', '');
       for (const d of act.filter((x) => x.type === 'Mover depot')) {
         const n = (st) => d.bays.filter((b) => b.state === st).length;
@@ -366,14 +375,14 @@
       }
       const at = act.find((x) => x.type === 'Air terminal');
       if (at) rows += row(at.uid, at.id, 'Air cargo', `${at.rack.filter((r) => r.u).length} ULDs on landside rack`, 'Open', 'blue', '');
-      rows += row('', 'Booked', 'Freight', `${WT.SUP.backlog.sea.length} sea · ${WT.SUP.backlog.rail.length} rail · ${WT.SUP.backlog.air.length} air`, 'Awaiting carrier', 'amber', '');
+      rows += row('', 'Booked', 'Freight', `${WT.SUP.backlog.sea.length} sea · ${WT.SUP.backlog.rail.length} rail`, 'Awaiting carrier', 'amber', '');
       const jam = WT.TR.jam, jq = S.dispatchQ.length + S.internalQ.length;
       rows += row('', 'Roads', 'Dispatch', `${Math.round(jam * 100)}% of traffic queued · ${jq} loads waiting`, S.holding ? 'Holding trucks' : jam > 0.3 ? 'Metering' : 'Free flow', S.holding || jam > 0.3 ? 'amber' : 'green', '');
     } else if (tab === 'facilities') {
       for (const f of act.slice().reverse()) rows += row(f.uid, f.id, f.type, esc(f.name), 'Online', 'green', money(f.income * 60 * WT.G.INCOME_SCALE) + '/m');
     } else if (tab === 'fleet') {
       for (const tr of WT.trains) rows += row(tr.uid, tr.id, 'Train', `${dot('#2f56e0')}${tr.operator}`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
-      for (const tr of WT.RING.trains) rows += row(tr.uid, tr.id, tr.role === 'shuttle' ? 'Pod shuttle' : tr.ore ? 'Ore train' : 'Industrial freight', `${dot(tr.role === 'shuttle' ? '#2aa198' : '#f0b429')}${tr.cars.filter((c) => c.cont).length} boxes aboard`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
+      for (const tr of WT.RING.trains) rows += row(tr.uid, tr.id, tr.role === 'shuttle' ? 'Block shuttle' : tr.ore ? 'Ore train' : 'Freight', `${dot(tr.role === 'shuttle' ? '#2aa198' : '#f0b429')}${tr.cars.filter((c) => c.cont).length} boxes aboard`, tr.status, WT.toneFor(tr.status), Math.round(tr.v * 3.6) + ' km/h');
       for (const p of WT.AIR.planes) rows += row(p.uid, p.flight, 'Aircraft', `${dot('#1aa6b7')}${p.from} → ${p.dest}`, p.status, WT.toneFor(p.status), '');
       for (const s of WT.ships) rows += row(s.uid, s.name.replace('MV ', ''), 'Vessel', `${dot('#24336e')}${s.port ? s.port.id : 'At sea'}`, s.status, WT.toneFor(s.status), '');
       for (const t of WT.trucks.filter((x) => x.legs.length).slice(0, 30)) rows += row(t.uid, t.id, t.variant === 'mixer' ? 'Mixer' : 'Truck', `${dot(hex(t.carrier.cab))}${esc(t.mission)}`, t.status, WT.toneFor(t.status), '');

@@ -26,13 +26,12 @@
     if (R.branch) return;
     R.branch = true;
     const g = new T.Group(), b = new M.MB(), sl = [];
-    const [mx0, mx1] = R.mergeW;
-    trackSeg(g, b, sl, -W.EDGE - 400, BR, mx0, BR);
-    trackSeg(g, b, sl, mx0, BR, mx1, RAIL().zE);
+    // (it ends where the rail grid's link down to the north trunk leaves it: js/ring.js)
+    trackSeg(g, b, sl, -W.EDGE - 400, BR, -985, BR);
     W.dashes(g, sl, 0xa49c90, 0.06);
     g.add(b.mesh(false, true));
     WT.scene.add(g);
-    W.clearTrees({ x0: -W.EDGE - 420, x1: mx1 + 10, z0: BR - 8, z1: BR + 8 });
+    W.clearTrees({ x0: -W.EDGE - 420, x1: -980, z0: BR - 8, z1: BR + 8 });
   };
   R.buildSpur = () => {
     if (R.spur) return;
@@ -513,8 +512,8 @@
       WT.log(`🛢️ Pipeline spur to ${f.id} commissioned`, 'green', true);
       return path;
     }
-    // the Production Ring lies beyond the mines and the rail yards, so its spurs run buried from the trunk's end and
-    // come up at a valve station on the avenue verge beside each plant, then cross into its yard on a short rack
+    // the blocks lie across the rail grid, so their spurs run buried from the trunk's end and come up at a valve
+    // station on the road verge beside each plant, then cross into its yard on a short rack
     ringBranch(f, p, vx, s) {
       const TE = [-760, PIPE_Z], b = new M.MB();
       if (!R.ringFeed) {
@@ -530,7 +529,7 @@
       const sA = Math.hypot(TE[0] - this.x + 70, 0), sB = sA + Math.hypot(vx - TE[0], p.z - TE[1]);
       path.under = [sA + 1, sB - 1];
       this.branches.set(f, path);
-      WT.log(`🛢️ Buried pipeline spur to ${f.id} on the Production Ring commissioned`, 'green', true);
+      WT.log(`🛢️ Buried pipeline spur to ${f.id} in block ${f.pod.key} commissioned`, 'green', true);
       return path;
     }
     // pipeline batches: each booked order is pumped down the line as a train of product slugs

@@ -8,12 +8,11 @@
     yellow: 0xf1c66b, water: 0xadc9f3, ballast: 0xc9c6d6, runway: 0xbfc5e2, pad: 0xdfe3f5,
   };
   const COL = W.COL;
-  W.AVENUES = [-120, 120, -360, 360, -600, 600];
+  // The whole map is laid out around the rail grid (js/ring.js): a column of blocks along each avenue, a double-track
+  // spine between every two columns, and each block's road a short one of its own that never meets the highway.
+  W.AVENUES = [-1440, -960, -480, 0, 480, 960, 1440];
+  W.SPINES = [-1200, -720, -240, 240, 720, 1200];
   W.EDGE = 1700;
-  // extra rail yards beyond the park grid, each on an access avenue of its own along the mainline (600 is the airfield)
-  W.YARD_SITES = [1320]; // (the west of the park belongs to the industrial pods and their rail network: js/ring.js)
-  // the Production Ring's two pod avenues, south of the highway west of the park (js/ring.js)
-  W.RING_AVENUES = [-1440, -960];
   W.SEA_Z = 600;
   W.RAIL = { zE: -650, zW: -662 };
   // two lanes each way: highway lanes at |z| 2.0 / 5.6, avenue lanes at |x − A| 1.9 / 5.5 (inner / outer)
@@ -22,7 +21,12 @@
   W.hwLaneZ = (dir, outer) => (dir > 0 ? 1 : -1) * (outer ? W.HW_OUT : W.HW_IN);
   // avenue lane x for a vehicle heading along z with sign vz (−z on the east side, +z on the west side)
   W.avLaneX = (A, vz, outer) => A + (vz < 0 ? 1 : -1) * (outer ? W.AV_OUT : W.AV_IN);
-  W.PLOT_K = 5; // plot rows per avenue side (row 5 ends at |z| 549, short of the rail yards, ports and airfield)
+  W.PLOT_K = 4; // plot rows per block side
+  // plot row centres: north blocks lie between the middle trunk and the north trunk, south blocks between the highway
+  // and the coast
+  W.rowZ = (h, k) => (h < 0 ? -(210 + 108 * k) : 76 + 108 * k);
+  // where each block's road starts (|z|): north of the middle trunk, and a little way off the highway in the south
+  W.ROAD_START = { north: 158, south: 18 };
 
   /* ---------- helpers ---------- */
   W.flat = function (parent, w, d, color, x, z, y = 0.02) {
@@ -81,7 +85,7 @@
   /* ---------- plots ---------- */
   W.plots = [];
   function makePlot(A, s, h, k) {
-    const zc = h * (64 + 108 * k);
+    const zc = W.rowZ(h, k);
     const p = { id: `${A}:${s}:${h}:${k}`, A, s, h, k, zc, used: null };
     p.toWorld = (x, z) => [A + s * (8 + x), zc + s * z];
     const xa = A + s * 6, xb = A + s * 114;
@@ -91,18 +95,15 @@
     W.plots.push(p);
     return p;
   }
-  for (const A of W.AVENUES) for (const h of [-1, 1]) for (let k = 0; k < W.PLOT_K; k++) for (const s of [1, -1]) {
-    if (A === 600 && h < 0 && s > 0) continue; // airport district
-    makePlot(A, s, h, k);
-  }
-  W.makePlot = makePlot; // the Production Ring adds its pod plots (js/ring.js)
+  for (const A of W.AVENUES) for (const h of [-1, 1]) for (let k = 0; k < W.PLOT_K; k++) for (const s of [1, -1]) makePlot(A, s, h, k);
+  W.makePlot = makePlot;
   W.plotAt = (A, s, h, k) => W.plots.find((p) => p.A === A && p.s === s && p.h === h && p.k === k);
 
   /* ---------- avenues (grow with the park) ---------- */
   W.av = {};
   W.builtAbsX = 150;
   function avenueState(A) {
-    return (W.av[A] = W.av[A] || { north: 7, south: 7, built: false, paving: {} });
+    return (W.av[A] = W.av[A] || { north: W.ROAD_START.north, south: W.ROAD_START.south, built: false, paving: {} });
   }
   // generator: pave avenue A toward hemisphere h (−1 north, +1 south) out to |z| = to
   W.extendAvenue = function* (A, h, to, speed = 30) {
@@ -113,10 +114,14 @@
     st.paving[key] = true;
     const from = st[key], len = to - from;
     W.builtAbsX = Math.max(W.builtAbsX, Math.abs(A) + 120);
-    if (!st.built) {
-      st.built = true;
-      W.flat(WT.scene, 17, 17, COL.road, A, 0, 0.032);
-      WT.TR.addJunction(A);
+    if (!st[key + 'Cap']) {
+      // the road's end nearest the highway: a turning head with a kerb, so nobody mistakes it for a way out
+      st[key + 'Cap'] = true;
+      const z0 = h * from;
+      W.flat(WT.scene, 22, 12, COL.road, A, z0 - h * 2, 0.031);
+      const kb = new M.MB();
+      kb.box(24, 0.35, 0.6, 0xc9cfe8, A, 0, z0 - h * 8.4);
+      WT.scene.add(kb.mesh());
     }
     const g = new T.Group();
     g.position.set(A, 0, h * from);
@@ -230,10 +235,7 @@
   function treeAllowed(x, z) {
     if (Math.abs(z) < 14) return false;
     if (z > W.SEA_Z - 8) return false;
-    if (z > -682 && z < -620) return false;
-    for (const A of W.AVENUES) if (Math.abs(x - A) < 10) return false;
-    if (x > 615 && z > -590 && z < -330) return false;
-    if (Math.abs(x - 900) < 10 && z < 0 && z > -380) return false;
+    for (const A of W.AVENUES) if (Math.abs(x - A) < 10 && Math.abs(z) > (z < 0 ? W.ROAD_START.north : W.ROAD_START.south) - 12) return false;
     if (x > -60 && x < -20 && z > 10 && z < 24) return false;
     return true;
   }
@@ -339,7 +341,7 @@
     const a = Math.floor(x0 / step) * step, b = Math.ceil(x1 / step) * step;
     for (let x = a; x <= b; x += step) {
       if (r.list.find((p) => p.x === x)) continue;
-      if ([...W.AVENUES, ...W.YARD_SITES, ...W.RING_AVENUES].some((A) => Math.abs(A - x) < 10)) continue; // leave room for every avenue
+      if (W.SPINES.some((sx) => Math.abs(sx - x) < 14)) continue; // leave room for the spines' viaducts over the highway
       const m = M.pylon();
       m.position.set(x, 0, z);
       m.scale.y = 0.01;
